@@ -135,13 +135,30 @@ namespace Terrarium.Sim
                     Position = pos,
                     Velocity = _rng.NextUnitCircle() * _config.Species.BaseSpeed * 0.3f,
                     Energy = _config.Species.ReproductionEnergyThreshold * _config.Species.InitialEnergyFractionOfThreshold,
-                    Age = 0,
+                    Age = SampleInitialAge(),
                     State = AgentState.Wander,
                     Alive = true,
                     Stress = 0
                 });
                 _idToIndex[_nextId - 1] = _agents.Count - 1;
             }
+        }
+
+        private float SampleInitialAge()
+        {
+            var minAge = MathF.Max(0f, _config.Species.InitialAgeMin);
+            var defaultMax = MathF.Min(_config.Species.AdultAge, _config.Species.MaxAge * 0.5f);
+            var maxAge = _config.Species.InitialAgeMax > 0f
+                ? _config.Species.InitialAgeMax
+                : defaultMax;
+            maxAge = MathF.Max(0f, MathF.Min(maxAge, _config.Species.MaxAge));
+
+            if (maxAge < minAge)
+            {
+                (minAge, maxAge) = (maxAge, minAge);
+            }
+
+            return _rng.NextRange(minAge, maxAge);
         }
 
     private void CollectNeighborData(Agent agent, IReadOnlyList<SpatialGrid.GridEntry> neighbors)

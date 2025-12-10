@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using Terrarium.Sim;
@@ -82,6 +83,33 @@ namespace Terrarium.SimTests
             Assert.InRange(world.Agents.Count, 5, config.MaxPopulation);
             var metrics = world.Metrics.Entries[world.Metrics.Entries.Count - 1];
             Assert.True(metrics.Population <= config.MaxPopulation);
+        }
+
+        [Fact]
+        public void InitialPopulationAgesAreRandomizedWithinRange()
+        {
+            var config = new SimulationConfig
+            {
+                Seed = 321,
+                InitialPopulation = 12,
+                Species = new SpeciesConfig
+                {
+                    AdultAge = 30f,
+                    InitialAgeMin = 5f,
+                    InitialAgeMax = 10f
+                }
+            };
+
+            var world = new World(config);
+            var uniqueAges = new HashSet<float>();
+
+            foreach (var agent in world.Agents)
+            {
+                Assert.InRange(agent.Age, config.Species.InitialAgeMin, config.Species.InitialAgeMax);
+                uniqueAges.Add(agent.Age);
+            }
+
+            Assert.True(uniqueAges.Count > 1);
         }
 
         [Fact]

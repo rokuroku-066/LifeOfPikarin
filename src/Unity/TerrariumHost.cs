@@ -121,6 +121,8 @@ namespace Terrarium.UnityView
             public float AdultAge = 8f;
             public float MaxAge = 120f;
             public float WanderJitter = 0.45f;
+            public float InitialAgeMin = 0f;
+            public float InitialAgeMax = 0f;
 
             public SpeciesConfig ToSimConfig()
             {
@@ -134,7 +136,9 @@ namespace Terrarium.UnityView
                     ReproductionEnergyThreshold = ReproductionEnergyThreshold,
                     AdultAge = AdultAge,
                     MaxAge = MaxAge,
-                    WanderJitter = WanderJitter
+                    WanderJitter = WanderJitter,
+                    InitialAgeMin = InitialAgeMin,
+                    InitialAgeMax = InitialAgeMax
                 };
             }
         }

@@ -25,6 +25,8 @@ namespace Terrarium.Sim
         public float BirthEnergyCost { get; set; } = 8f; // 出産に必要なエネルギー消費量
         public float ReproductionEnergyThreshold { get; set; } = 12f; // 繁殖可能になるエネルギー閾値
         public float AdultAge { get; set; } = 20f; // 成体とみなす年齢（秒）
+        public float InitialAgeMin { get; set; } = 0f; // 初期個体の年齢下限
+        public float InitialAgeMax { get; set; } = 0f; // 初期個体の年齢上限（0 以下なら AdultAge と MaxAge/2 の低い方）
         public float MaxAge { get; set; } = 80f; // 寿命（この年齢以降死亡確率が上昇）
         public float WanderJitter { get; set; } = 0.45f; // ランダム遊泳の方向ジッタ強度
         public float InitialEnergyFractionOfThreshold { get; set; } = 0.8f; // 初期エネルギー（閾値に対する割合）

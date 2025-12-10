@@ -13,6 +13,8 @@ Improve early reproduction and sustain births/deaths so the population does not 
 - [x] (2025-12-11 00:35Z) Drafted ExecPlan.
 - [x] (2025-12-11 00:50Z) Updated config defaults (lower reproduction threshold, lower adult age, higher initial energy fraction, new feedback/metabolism params).
 - [x] (2025-12-11 00:55Z) Implemented density-scaled reproduction, high-energy drain, and age/density mortality hazard in `World.ApplyLifeCycle`.
+- [x] (2025-12-10 18:00Z) Randomized bootstrap ages via `InitialAgeMin`/`InitialAgeMax` (defaults 0..AdultAge) to seed mixed cohorts.
+- [x] (2025-12-10 18:20Z) Re-ran `dotnet test tests/SimTests/SimTests.csproj` after age randomization (all passing).
 - [ ] (Pending) Evaluate neighbor query tuning; leave as-is if profiling shows no gain.
 - [x] (2025-12-11 00:58Z) Ran `dotnet test tests/SimTests/SimTests.csproj` (all passing).
 - [ ] (Pending) Run headless smoke run (blocked in Windows PowerShell by net8 assembly loading; use dotnet-hosted runner).
@@ -29,6 +31,9 @@ Improve early reproduction and sustain births/deaths so the population does not 
 - Decision: Defer spatial grid tuning unless tests or smoke run show perf regressions; current reuse avoids allocations.
   Rationale: Avoid unnecessary churn; measure first.
   Date/Author: 2025-12-11 / Codex
+- Decision: Allow configurable randomized initial ages (default 0..AdultAge) so the seed population spans cohorts while keeping determinism.
+  Rationale: Mixed ages jump-start lifecycle churn without changing reproduction logic for newborns.
+  Date/Author: 2025-12-10 / Codex
 
 ## Outcomes & Retrospective
 
