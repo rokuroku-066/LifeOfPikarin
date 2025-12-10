@@ -60,6 +60,7 @@ cd LifeOfPikarin
 ```
 2. .NET SDK をインストールして `dotnet --info` で 8.x が利用できることを確認。
 3. Unity 6.x LTS（推奨: 6.3 LTS）を Unity Hub からインストールし、プロジェクトを開く。
+   - Windows では `setup_windows_env.bat` をルートで実行すると、.NET 8 SDK の導入確認と Unity Hub / Unity 6.x LTS の有無チェック、ソリューション復元、テスト実行までまとめて行えます。
 
 ---
 
