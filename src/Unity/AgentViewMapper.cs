@@ -1,40 +1,43 @@
+using System;
+using System.Collections.Generic;
 using Terrarium.Sim;
 
-namespace Terrarium.UnityView;
-
-public sealed class AgentViewMapper
+namespace Terrarium.UnityView
 {
-    public IReadOnlyList<AgentSnapshot> Map(IReadOnlyList<Agent> agents)
+    public sealed class AgentViewMapper
     {
-        var snapshots = new List<AgentSnapshot>(agents.Count);
-        foreach (var agent in agents)
+        public IReadOnlyList<AgentSnapshot> Map(IReadOnlyList<Agent> agents)
         {
-            if (!agent.Alive)
+            var snapshots = new List<AgentSnapshot>(agents.Count);
+            foreach (var agent in agents)
             {
-                continue;
+                if (!agent.Alive)
+                {
+                    continue;
+                }
+
+                snapshots.Add(new AgentSnapshot
+                {
+                    Id = agent.Id,
+                    Position = agent.Position,
+                    Velocity = agent.Velocity,
+                    Scale = 1f + MathF.Min(1.5f, agent.Age * 0.05f),
+                    ColorHue = (agent.GroupId % 8) / 8f,
+                    State = agent.State
+                });
             }
 
-            snapshots.Add(new AgentSnapshot
-            {
-                Id = agent.Id,
-                Position = agent.Position,
-                Velocity = agent.Velocity,
-                Scale = 1f + MathF.Min(1.5f, agent.Age * 0.05f),
-                ColorHue = (agent.GroupId % 8) / 8f,
-                State = agent.State
-            });
+            return snapshots;
         }
-
-        return snapshots;
     }
-}
 
-public sealed record AgentSnapshot
-{
-    public int Id { get; init; }
-    public Vec2 Position { get; init; }
-    public Vec2 Velocity { get; init; }
-    public float Scale { get; init; }
-    public float ColorHue { get; init; }
-    public AgentState State { get; init; }
+    public sealed class AgentSnapshot
+    {
+        public int Id { get; set; }
+        public Vec2 Position { get; set; }
+        public Vec2 Velocity { get; set; }
+        public float Scale { get; set; }
+        public float ColorHue { get; set; }
+        public AgentState State { get; set; }
+    }
 }
