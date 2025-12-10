@@ -1,4 +1,6 @@
+using System;
 using System.Globalization;
+using System.IO;
 using Terrarium.Sim;
 
 var options = RunnerOptions.Parse(args);
@@ -10,8 +12,23 @@ HeadlessRunner.Run(world, options.Steps, writer, includeHeader: true);
 
 Console.WriteLine($"Ran {options.Steps} ticks | Seed={options.Seed} | Output={options.LogPath}");
 
-internal sealed record RunnerOptions(int Steps, int Seed, string LogPath, int InitialPopulation, int MaxPopulation)
+internal sealed class RunnerOptions
 {
+    public RunnerOptions(int steps, int seed, string logPath, int initialPopulation, int maxPopulation)
+    {
+        Steps = steps;
+        Seed = seed;
+        LogPath = logPath;
+        InitialPopulation = initialPopulation;
+        MaxPopulation = maxPopulation;
+    }
+
+    public int Steps { get; }
+    public int Seed { get; }
+    public string LogPath { get; }
+    public int InitialPopulation { get; }
+    public int MaxPopulation { get; }
+
     public static RunnerOptions Parse(string[] args)
     {
         var steps = 2000;

@@ -1,133 +1,134 @@
-using System.Diagnostics;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
-namespace Terrarium.Sim;
-
-public sealed class World
+namespace Terrarium.Sim
 {
-    private readonly SimulationConfig _config;
-    private readonly DeterministicRng _rng;
-    private readonly SpatialGrid _grid;
-    private readonly EnvironmentGrid _environment;
-    private readonly List<Agent> _agents = new();
-    private readonly List<Agent> _birthQueue = new();
-    private readonly MetricsBuffer _metrics = new();
-    private readonly Dictionary<int, int> _idToIndex = new();
-    private readonly List<Vec2> _neighborOffsets = new();
-    private readonly List<Agent> _neighborAgents = new();
-    private readonly HashSet<int> _groupScratch = new();
-    private int _nextId;
-
-    public World(SimulationConfig config)
+    public sealed class World
     {
-        _config = config;
-        _rng = new DeterministicRng(config.Seed);
-        _grid = new SpatialGrid(config.CellSize);
-        _environment = new EnvironmentGrid(config.CellSize, config.Environment);
-        BootstrapPopulation();
-    }
+        private readonly SimulationConfig _config;
+        private readonly DeterministicRng _rng;
+        private readonly SpatialGrid _grid;
+        private readonly EnvironmentGrid _environment;
+        private readonly List<Agent> _agents = new();
+        private readonly List<Agent> _birthQueue = new();
+        private readonly MetricsBuffer _metrics = new();
+        private readonly Dictionary<int, int> _idToIndex = new();
+        private readonly List<Vec2> _neighborOffsets = new();
+        private readonly List<Agent> _neighborAgents = new();
+        private readonly HashSet<int> _groupScratch = new();
+        private int _nextId;
 
-    public IReadOnlyList<Agent> Agents => _agents;
-    public MetricsBuffer Metrics => _metrics;
-
-    public void Reset()
-    {
-        _agents.Clear();
-        _birthQueue.Clear();
-        _environment.Reset();
-        _grid.Clear();
-        _neighborOffsets.Clear();
-        _neighborAgents.Clear();
-        _groupScratch.Clear();
-        _rng.Reset();
-        _idToIndex.Clear();
-        _metrics.Clear();
-        _nextId = 0;
-        BootstrapPopulation();
-    }
-
-    public TickMetrics Step(int tick)
-    {
-        var sw = Stopwatch.StartNew();
-        RefreshIndexMap();
-        _grid.Clear();
-        for (var i = 0; i < _agents.Count; i++)
+        public World(SimulationConfig config)
         {
-            _grid.Insert(_agents[i].Id, _agents[i].Position);
+            _config = config;
+            _rng = new DeterministicRng(config.Seed);
+            _grid = new SpatialGrid(config.CellSize);
+            _environment = new EnvironmentGrid(config.CellSize, config.Environment);
+            BootstrapPopulation();
         }
 
-        var neighborChecks = 0;
-        var births = 0;
-        var deaths = 0;
+        public IReadOnlyList<Agent> Agents => _agents;
+        public MetricsBuffer Metrics => _metrics;
 
-        for (var i = 0; i < _agents.Count; i++)
+        public void Reset()
         {
-            var agent = _agents[i];
-            if (!agent.Alive)
-            {
-                continue;
-            }
-
-            var neighbors = _grid.GetNeighbors(agent.Position, _config.Species.VisionRadius);
-            CollectNeighborData(agent, neighbors);
-            neighborChecks += _neighborAgents.Count;
-
-            var desired = ComputeDesiredVelocity(agent, _neighborAgents, _neighborOffsets);
-            var accel = desired - agent.Velocity;
-            var accelMag = accel.Length;
-            if (accelMag > _config.Species.MaxAcceleration)
-            {
-                accel = accel * (_config.Species.MaxAcceleration / accelMag);
-            }
-
-            agent.Velocity += accel * _config.TimeStep;
-            var speed = agent.Velocity.Length;
-            if (speed > _config.Species.BaseSpeed)
-            {
-                agent.Velocity = agent.Velocity * (_config.Species.BaseSpeed / speed);
-            }
-
-            agent.Position += agent.Velocity * _config.TimeStep;
-            agent.Position = Wrap(agent.Position, _config.WorldSize);
-            agent.Age += _config.TimeStep;
-
-            ApplyLifeCycle(agent, _neighborAgents.Count, ref births);
-
-            _agents[i] = agent;
+            _agents.Clear();
+            _birthQueue.Clear();
+            _environment.Reset();
+            _grid.Clear();
+            _neighborOffsets.Clear();
+            _neighborAgents.Clear();
+            _groupScratch.Clear();
+            _rng.Reset();
+            _idToIndex.Clear();
+            _metrics.Clear();
+            _nextId = 0;
+            BootstrapPopulation();
         }
 
-        _environment.Tick(_config.TimeStep);
-        ApplyBirths();
-        RemoveDead(ref deaths);
-
-        sw.Stop();
-        var snapshot = CreateMetrics(tick, births, deaths, neighborChecks, (float)sw.Elapsed.TotalMilliseconds);
-        _metrics.Add(snapshot);
-        return snapshot;
-    }
-
-    private void BootstrapPopulation()
-    {
-        for (var i = 0; i < _config.InitialPopulation; i++)
+        public TickMetrics Step(int tick)
         {
-            var pos = new Vec2(_rng.NextRange(0, _config.WorldSize), _rng.NextRange(0, _config.WorldSize));
-            var group = i % 4;
-            _agents.Add(new Agent
+            var sw = Stopwatch.StartNew();
+            RefreshIndexMap();
+            _grid.Clear();
+            for (var i = 0; i < _agents.Count; i++)
             {
-                Id = _nextId++,
-                Generation = 0,
-                GroupId = group,
-                Position = pos,
-                Velocity = _rng.NextUnitCircle() * _config.Species.BaseSpeed * 0.3f,
-                Energy = _config.Species.ReproductionEnergyThreshold * 0.5f,
-                Age = 0,
-                State = AgentState.Wander,
-                Alive = true,
-                Stress = 0
-            });
-            _idToIndex[_nextId - 1] = _agents.Count - 1;
+                _grid.Insert(_agents[i].Id, _agents[i].Position);
+            }
+
+            var neighborChecks = 0;
+            var births = 0;
+            var deaths = 0;
+
+            for (var i = 0; i < _agents.Count; i++)
+            {
+                var agent = _agents[i];
+                if (!agent.Alive)
+                {
+                    continue;
+                }
+
+                var neighbors = _grid.GetNeighbors(agent.Position, _config.Species.VisionRadius);
+                CollectNeighborData(agent, neighbors);
+                neighborChecks += _neighborAgents.Count;
+
+                var desired = ComputeDesiredVelocity(agent, _neighborAgents, _neighborOffsets);
+                var accel = desired - agent.Velocity;
+                var accelMag = accel.Length;
+                if (accelMag > _config.Species.MaxAcceleration)
+                {
+                    accel = accel * (_config.Species.MaxAcceleration / accelMag);
+                }
+
+                agent.Velocity += accel * _config.TimeStep;
+                var speed = agent.Velocity.Length;
+                if (speed > _config.Species.BaseSpeed)
+                {
+                    agent.Velocity = agent.Velocity * (_config.Species.BaseSpeed / speed);
+                }
+
+                agent.Position += agent.Velocity * _config.TimeStep;
+                agent.Position = Wrap(agent.Position, _config.WorldSize);
+                agent.Age += _config.TimeStep;
+
+                ApplyLifeCycle(agent, _neighborAgents.Count, ref births);
+
+                _agents[i] = agent;
+            }
+
+            _environment.Tick(_config.TimeStep);
+            ApplyBirths();
+            RemoveDead(ref deaths);
+
+            sw.Stop();
+            var snapshot = CreateMetrics(tick, births, deaths, neighborChecks, (float)sw.Elapsed.TotalMilliseconds);
+            _metrics.Add(snapshot);
+            return snapshot;
         }
-    }
+
+        private void BootstrapPopulation()
+        {
+            for (var i = 0; i < _config.InitialPopulation; i++)
+            {
+                var pos = new Vec2(_rng.NextRange(0, _config.WorldSize), _rng.NextRange(0, _config.WorldSize));
+                var group = i % 4;
+                _agents.Add(new Agent
+                {
+                    Id = _nextId++,
+                    Generation = 0,
+                    GroupId = group,
+                    Position = pos,
+                    Velocity = _rng.NextUnitCircle() * _config.Species.BaseSpeed * 0.3f,
+                    Energy = _config.Species.ReproductionEnergyThreshold * 0.5f,
+                    Age = 0,
+                    State = AgentState.Wander,
+                    Alive = true,
+                    Stress = 0
+                });
+                _idToIndex[_nextId - 1] = _agents.Count - 1;
+            }
+        }
 
     private void CollectNeighborData(Agent agent, IReadOnlyList<SpatialGrid.GridEntry> neighbors)
     {
@@ -392,4 +393,5 @@ public sealed class World
             _idToIndex[_agents[i].Id] = i;
         }
     }
+}
 }
