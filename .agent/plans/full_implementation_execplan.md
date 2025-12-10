@@ -19,6 +19,7 @@ Use a list with checkboxes to summarize granular steps. Every stopping point mus
 - [x] (2025-12-10 04:25Z) Installed dotnet-sdk-8.0, ran `dotnet test`, and aligned deterministic comparisons to ignore wall-clock tick duration noise.
 - [x] (2025-12-10 05:00Z) Re-reviewed DESIGN.md/ExecPlan alignment, fixed death metric double-counting with regression coverage, added solution scaffolding for Sim/View/Tests, and reran tests.
 - [x] (2025-05-18 12:00Z) Corrected `World.Reset` to rebuild deterministic RNG/environment/grid state and clear transient caches so restarted runs mirror new world construction.
+- [x] (2025-12-10 05:25Z) Added headless `SimRunner` console app plus `HeadlessRunner` helper, documented usage, and covered CSV emission via regression tests.
 
 ## Surprises & Discoveries
 
@@ -59,8 +60,8 @@ Record every decision made while working on the plan in the format:
 Summarize outcomes, gaps, and lessons learned at major milestones or completion. Compare the result against the original purpose.
 
 - Current codebase now enforces vision-radius neighbor filtering and reuses scratch buffers to reduce per-tick allocations, improving adherence to performance and O(N²)-avoidance goals.
-- Remaining gaps: Unity runtime host/renderer still unimplemented; deterministic headless runner and performance microbenchmarks are pending; additional validation artifacts (metrics logs, visual captures) should be produced once runtime harness exists.
-- Added solution scaffolding and lifecycle metric fixes; stability feedbacks remain in place, but Unity render loop and headless runner are still outstanding.
+- Remaining gaps: Unity runtime host/renderer still unimplemented; performance microbenchmarks and Unity visual artifacts should be produced once runtime harness exists.
+- Added solution scaffolding, lifecycle metric fixes, and a headless runner; stability feedbacks remain in place, but Unity render loop is still outstanding.
 
 ## Context and Orientation
 
