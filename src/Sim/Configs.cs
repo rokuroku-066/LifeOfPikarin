@@ -1,3 +1,5 @@
+using System;
+
 namespace Terrarium.Sim;
 
 public sealed record SimulationConfig
@@ -31,6 +33,20 @@ public sealed record EnvironmentConfig
     public float ResourcePerCell { get; init; } = 10f;
     public float ResourceRegenPerSecond { get; init; } = 0.5f;
     public float ConsumptionRate { get; init; } = 5f;
+    public IReadOnlyList<ResourcePatchConfig> ResourcePatches { get; init; } = Array.Empty<ResourcePatchConfig>();
+    public float HazardDiffusionRate { get; init; } = 0f;
+    public float HazardDecayRate { get; init; } = 0f;
+    public float PheromoneDiffusionRate { get; init; } = 0f;
+    public float PheromoneDecayRate { get; init; } = 0f;
+}
+
+public sealed record ResourcePatchConfig
+{
+    public Vec2 Position { get; init; } = new(0, 0);
+    public float Radius { get; init; } = 5f;
+    public float ResourcePerCell { get; init; } = 10f;
+    public float RegenPerSecond { get; init; } = 0.5f;
+    public float InitialResource { get; init; } = 10f;
 }
 
 public sealed record FeedbackConfig

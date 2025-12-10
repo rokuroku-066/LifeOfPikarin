@@ -126,4 +126,59 @@ public class WorldTests
         Assert.Equal("0", fields[0]);
         Assert.True(int.Parse(fields[1]) > 0);
     }
+
+    [Fact]
+    public void ResourcePatchesRegenerateAndCap()
+    {
+        var envConfig = new EnvironmentConfig
+        {
+            ResourcePerCell = 10f,
+            ResourceRegenPerSecond = 1f,
+            ResourcePatches = new[]
+            {
+                new ResourcePatchConfig
+                {
+                    Position = new Vec2(0, 0),
+                    Radius = 1f,
+                    ResourcePerCell = 10f,
+                    RegenPerSecond = 5f,
+                    InitialResource = 2f
+                }
+            }
+        };
+
+        var grid = new EnvironmentGrid(1f, envConfig);
+        grid.Tick(1f); // regen applies without sampling
+        var valueAfterRegen = grid.Sample(new Vec2(0, 0));
+        Assert.InRange(valueAfterRegen, 6.9f, 7.1f);
+
+        grid.Consume(new Vec2(0, 0), 6f);
+        grid.Tick(1f);
+        Assert.InRange(grid.Sample(new Vec2(0, 0)), 5.9f, 6.1f);
+
+        grid.Tick(1f);
+        Assert.Equal(10f, grid.Sample(new Vec2(0, 0)), 3);
+    }
+
+    [Fact]
+    public void HazardFieldDecaysAndDiffuses()
+    {
+        var envConfig = new EnvironmentConfig
+        {
+            ResourcePerCell = 0f,
+            ResourceRegenPerSecond = 0f,
+            HazardDiffusionRate = 0.5f,
+            HazardDecayRate = 0.1f
+        };
+
+        var grid = new EnvironmentGrid(1f, envConfig);
+        grid.AddHazard(new Vec2(0, 0), 10f);
+        grid.Tick(1f);
+
+        var center = grid.SampleHazard(new Vec2(0, 0));
+        var east = grid.SampleHazard(new Vec2(1f, 0));
+
+        Assert.InRange(center, 4.49f, 4.51f);
+        Assert.InRange(east, 1.124f, 1.126f);
+    }
 }
