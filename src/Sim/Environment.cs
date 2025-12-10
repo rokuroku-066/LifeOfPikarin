@@ -198,10 +198,20 @@ namespace Terrarium.Sim
             for (var i = 0; i < _foodCellKeys.Count; i++)
             {
                 var key = _foodCellKeys[i];
-                if (!_foodBuffer.TryGetValue(key, out var value) || value <= Epsilon)
+                var hasValue = _foodBuffer.TryGetValue(key, out var value);
+                if ((hasValue && value > Epsilon) || _foodCells[key].RegenPerSecond > 0f)
                 {
-                    _foodCells.Remove(key);
+                    if (!hasValue || value <= Epsilon)
+                    {
+                        var cell = _foodCells[key];
+                        cell.Value = 0f;
+                        _foodCells[key] = cell;
+                    }
+
+                    continue;
                 }
+
+                _foodCells.Remove(key);
             }
 
             _foodBuffer.Clear();
