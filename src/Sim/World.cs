@@ -23,7 +23,7 @@ public sealed class World
         _config = config;
         _rng = new DeterministicRng(config.Seed);
         _grid = new SpatialGrid(config.CellSize);
-        _environment = new EnvironmentGrid(config.CellSize, config.Environment.ResourcePerCell, config.Environment.ResourceRegenPerSecond);
+        _environment = new EnvironmentGrid(config.CellSize, config.Environment);
         BootstrapPopulation();
     }
 
@@ -96,7 +96,7 @@ public sealed class World
             _agents[i] = agent;
         }
 
-        _environment.Regen(_config.TimeStep);
+        _environment.Tick(_config.TimeStep);
         ApplyBirths();
         RemoveDead(ref deaths);
 
