@@ -33,6 +33,10 @@ public sealed class World
     public void Reset()
     {
         _agents.Clear();
+        _birthQueue.Clear();
+        _environment.Reset();
+        _rng.Reset();
+        _idToIndex.Clear();
         _metrics.Clear();
         _nextId = 0;
         BootstrapPopulation();

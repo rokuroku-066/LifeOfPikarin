@@ -10,9 +10,17 @@ public sealed class DeterministicRng
     private uint _z;
     private uint _w;
 
+    private readonly int _seed;
+
     public DeterministicRng(int seed)
     {
-        _x = (uint)seed;
+        _seed = seed;
+        Reset();
+    }
+
+    public void Reset()
+    {
+        _x = (uint)_seed;
         _y = 362436069;
         _z = 521288629;
         _w = 88675123;

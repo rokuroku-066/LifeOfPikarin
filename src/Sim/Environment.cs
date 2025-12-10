@@ -14,6 +14,11 @@ public sealed class EnvironmentGrid
         _regenPerSecond = regenPerSecond;
     }
 
+    public void Reset()
+    {
+        _cells.Clear();
+    }
+
     public float Sample(Vec2 position)
     {
         var key = CellKey(position);
