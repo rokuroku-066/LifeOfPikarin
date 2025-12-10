@@ -1,0 +1,48 @@
+# Unity-generated folders and caches
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+BuildReports/
+SysInfo.txt
+
+# Platform-specific build output
+[Bb]in/
+/[Pp]ublish*/
+
+# Unity asset store tools
+Assets/AssetStoreTools*
+
+# Package manager cache
+Packages/com.unity.package-manager-ui/Cache/
+Packages/com.unity.package-manager-ui/Downloads/
+
+# Visual Studio / Rider artifacts
+.vs/
+*.csproj.user
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Visual Studio Code settings
+.vscode/
+
+# Crashlytics / analytics
+CrashReports/
+
+# Generated project files
+*.unityproj
+*.sln.iml
+
