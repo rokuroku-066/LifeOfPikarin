@@ -59,8 +59,9 @@ Record every decision made while working on the plan in the format:
 
 Summarize outcomes, gaps, and lessons learned at major milestones or completion. Compare the result against the original purpose.
 
-- Current codebase now enforces vision-radius neighbor filtering and reuses scratch buffers to reduce per-tick allocations, improving adherence to performance and O(N²)-avoidance goals.
-- Remaining gaps: Unity runtime host/renderer still unimplemented; performance microbenchmarks and Unity visual artifacts should be produced once runtime harness exists.
+- Core simulation is in place with vision-radius neighbor filtering, scratch-buffer reuse, density-aware feedbacks, and headless CSV logging; tick-metric equality now ignores wall-clock jitter while still reporting duration.
+- Unity runtime host (`TerrariumHost`) and GPU-instanced cube renderer are available; DTO defaults mirror sim defaults to preserve Sim/View separation.
+- Remaining gap: run a Unity visual sanity pass and optional microbenchmarks to document steady-frame performance; behavior is already covered by headless metrics and tests.
 - Added solution scaffolding, lifecycle metric fixes, and a headless runner; stability feedbacks remain in place, but Unity render loop is still outstanding.
 
 ## Context and Orientation

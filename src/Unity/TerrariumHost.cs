@@ -117,12 +117,15 @@ namespace Terrarium.UnityView
             public float VisionRadius = 6f;
             public float MetabolismPerSecond = 0.8f;
             public float BirthEnergyCost = 8f;
-            public float ReproductionEnergyThreshold = 15f;
-            public float AdultAge = 8f;
-            public float MaxAge = 120f;
+            public float ReproductionEnergyThreshold = 12f;
+            public float AdultAge = 20f;
+            public float MaxAge = 80f;
             public float WanderJitter = 0.45f;
             public float InitialAgeMin = 0f;
             public float InitialAgeMax = 0f;
+            public float InitialEnergyFractionOfThreshold = 0.8f;
+            public float EnergySoftCap = 20f;
+            public float HighEnergyMetabolismSlope = 0.015f;
 
             public SpeciesConfig ToSimConfig()
             {
@@ -138,7 +141,10 @@ namespace Terrarium.UnityView
                     MaxAge = MaxAge,
                     WanderJitter = WanderJitter,
                     InitialAgeMin = InitialAgeMin,
-                    InitialAgeMax = InitialAgeMax
+                    InitialAgeMax = InitialAgeMax,
+                    InitialEnergyFractionOfThreshold = InitialEnergyFractionOfThreshold,
+                    EnergySoftCap = EnergySoftCap,
+                    HighEnergyMetabolismSlope = HighEnergyMetabolismSlope
                 };
             }
         }
@@ -153,8 +159,8 @@ namespace Terrarium.UnityView
             public float FoodDecayRate = 0f;
             public float FoodFromDeath = 1f;
             public List<ResourcePatchDto> ResourcePatches = new();
-            public float DangerDiffusionRate = 0f;
-            public float DangerDecayRate = 0f;
+            public float DangerDiffusionRate = 1f;
+            public float DangerDecayRate = 1f;
             public float DangerPulseOnFlee = 1f;
             public float PheromoneDiffusionRate = 0f;
             public float PheromoneDecayRate = 0f;
@@ -215,7 +221,11 @@ namespace Terrarium.UnityView
             public int LocalDensitySoftCap = 8;
             public float DensityReproductionPenalty = 0.6f;
             public float StressDrainPerNeighbor = 0.05f;
-            public float DiseaseProbabilityPerNeighbor = 0.0015f;
+            public float DiseaseProbabilityPerNeighbor = 0.002f;
+            public float DensityReproductionSlope = 0.04f;
+            public float BaseDeathProbabilityPerSecond = 0.0005f;
+            public float AgeDeathProbabilityPerSecond = 0.00015f;
+            public float DensityDeathProbabilityPerNeighborPerSecond = 0.0001f;
 
             public FeedbackConfig ToSimConfig()
             {
@@ -224,7 +234,11 @@ namespace Terrarium.UnityView
                     LocalDensitySoftCap = LocalDensitySoftCap,
                     DensityReproductionPenalty = DensityReproductionPenalty,
                     StressDrainPerNeighbor = StressDrainPerNeighbor,
-                    DiseaseProbabilityPerNeighbor = DiseaseProbabilityPerNeighbor
+                    DiseaseProbabilityPerNeighbor = DiseaseProbabilityPerNeighbor,
+                    DensityReproductionSlope = DensityReproductionSlope,
+                    BaseDeathProbabilityPerSecond = BaseDeathProbabilityPerSecond,
+                    AgeDeathProbabilityPerSecond = AgeDeathProbabilityPerSecond,
+                    DensityDeathProbabilityPerNeighborPerSecond = DensityDeathProbabilityPerNeighborPerSecond
                 };
             }
         }

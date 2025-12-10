@@ -14,11 +14,11 @@ Update the terrarium simulation and related Unity integration code to avoid C# 1
 - [x] (2025-01-05 00:00Z) Convert file-scoped namespaces to block namespaces across Sim, Unity, and tests.
 - [x] (2025-01-05 00:00Z) Replace records/init/with usages with C#9-compatible classes and copy logic.
 - [x] (2025-01-05 00:00Z) Add explicit usings as needed for C#9 without implicit globals.
-- [ ] (2025-01-05 00:00Z) Run existing test suite to confirm behavior matches (blocked: dotnet CLI unavailable in container).
+- [x] (2025-12-10 20:38Z) Run existing test suite to confirm behavior matches (.NET 8.416 on Windows; all SimTests passing).
 
 ## Surprises & Discoveries
 
-- dotnet CLI is not available in the container, so tests cannot be executed here. Manual or CI run required elsewhere.
+- dotnet CLI was initially unavailable; now verified on Windows with .NET 8.416 and all SimTests passing.
 
 ## Decision Log
 
@@ -28,7 +28,8 @@ Update the terrarium simulation and related Unity integration code to avoid C# 1
 
 ## Outcomes & Retrospective
 
-Pending completion.
+- All file-scoped namespaces, records, and init-only setters were migrated to C#9-friendly constructs; deterministic behavior and public APIs stayed the same.
+- Verified on Windows with .NET SDK 8.416: `dotnet test tests/SimTests/SimTests.csproj` passes, confirming compatibility and determinism after the refactor.
 
 ## Context and Orientation
 

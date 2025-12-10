@@ -69,10 +69,10 @@ cd LifeOfPikarin
 `src/SimRunner/` のコンソールアプリで指定ステップ分のシミュレーションを回し、CSV にメトリクスを書き出します。
 
 ```bash
-dotnet run --project src/SimRunner \
-  -- --steps 2000 --seed 1337 \
+dotnet run --project src/SimRunner/SimRunner.csproj \
+  -- --steps 3000 --seed 42 \
   --initial 120 --max 500 \
-  --log artifacts/metrics.csv
+  --log artifacts/metrics_smoke.csv
 ```
 
 出力される CSV のカラム例:
@@ -86,6 +86,12 @@ dotnet run --project src/SimRunner \
 - `tickDurationMs`: 1 ステップの処理時間（ms）
 
 `--log` で指定したパス配下にディレクトリが無ければ自動で作成されます。
+
+主要な調整パラメータ（`SimulationConfig` と Unity インスペクタの DTO が同じ項目を持ちます）:
+- エネルギー上限と代謝: `EnergySoftCap`, `HighEnergyMetabolismSlope`, `MetabolismPerSecond`, `InitialEnergyFractionOfThreshold`
+- 繁殖トリガ: `ReproductionEnergyThreshold`, `AdultAge`, `DensityReproductionSlope`, `DensityReproductionPenalty`
+- 寿命/危険: `BaseDeathProbabilityPerSecond`, `AgeDeathProbabilityPerSecond`, `DensityDeathProbabilityPerNeighborPerSecond`
+- 環境フィールド: `FoodRegenPerSecond`, `FoodFromDeath`, `DangerDiffusionRate`/`DangerDecayRate`, `PheromoneDepositOnBirth`
 
 ---
 

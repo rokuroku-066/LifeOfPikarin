@@ -15,9 +15,9 @@ Improve early reproduction and sustain births/deaths so the population does not 
 - [x] (2025-12-11 00:55Z) Implemented density-scaled reproduction, high-energy drain, and age/density mortality hazard in `World.ApplyLifeCycle`.
 - [x] (2025-12-10 18:00Z) Randomized bootstrap ages via `InitialAgeMin`/`InitialAgeMax` (defaults 0..AdultAge) to seed mixed cohorts.
 - [x] (2025-12-10 18:20Z) Re-ran `dotnet test tests/SimTests/SimTests.csproj` after age randomization (all passing).
-- [ ] (Pending) Evaluate neighbor query tuning; leave as-is if profiling shows no gain.
+- [x] (2025-12-10 20:42Z) Evaluate neighbor query tuning; leave as-is if profiling shows no gain (neighborChecks/pop p95≈4.7; kept defaults).
 - [x] (2025-12-11 00:58Z) Ran `dotnet test tests/SimTests/SimTests.csproj` (all passing).
-- [ ] (Pending) Run headless smoke run (blocked in Windows PowerShell by net8 assembly loading; use dotnet-hosted runner).
+- [x] (2025-12-10 20:40Z) Run headless smoke run via `dotnet run --project src/SimRunner/SimRunner.csproj -- --steps 3000 --seed 42 --log artifacts/metrics_smoke.csv`.
 
 ## Surprises & Discoveries
 
@@ -34,10 +34,13 @@ Improve early reproduction and sustain births/deaths so the population does not 
 - Decision: Allow configurable randomized initial ages (default 0..AdultAge) so the seed population spans cohorts while keeping determinism.
   Rationale: Mixed ages jump-start lifecycle churn without changing reproduction logic for newborns.
   Date/Author: 2025-12-10 / Codex
+- Decision: Keep current grid sizing; smoke-run neighborChecks/population p95≈4.7 indicates locality is sufficient without tuning.
+  Rationale: Metrics show no O(N^2) behavior or perf regressions; avoid churn.
+  Date/Author: 2025-12-10 / Codex
 
 ## Outcomes & Retrospective
 
-To be filled after implementation and verification.
+- Smoke run (3000 ticks, seed 42) now completes via `dotnet run --project src/SimRunner/SimRunner.csproj -- --steps 3000 --seed 42 --log artifacts/metrics_smoke.csv`. First birth at tick 19; births/deaths remain >0 (last 500 ticks: births=125, deaths=125). Population holds at cap 500 with churn; avgEnergy≈29.4, avgAge≈39.1 at tick 2999. NeighborChecks/pop avg≈3.83 (p95≈4.67). Tick p95≈5.6 ms with rare spikes (max 24 ms at tick 0); acceptable for Phase 1.
 
 ## Context and Orientation
 

@@ -74,8 +74,7 @@ namespace Terrarium.Sim
                    MathF.Abs(AverageEnergy - other.AverageEnergy) < 1e-4f &&
                    MathF.Abs(AverageAge - other.AverageAge) < 1e-4f &&
                    Groups == other.Groups &&
-                   NeighborChecks == other.NeighborChecks &&
-                   MathF.Abs(TickDurationMs - other.TickDurationMs) < 1e-4f;
+                   NeighborChecks == other.NeighborChecks;
         }
 
         public override bool Equals(object? obj)
@@ -94,7 +93,6 @@ namespace Terrarium.Sim
             hash.Add(AverageAge);
             hash.Add(Groups);
             hash.Add(NeighborChecks);
-            hash.Add(TickDurationMs);
             return hash.ToHashCode();
         }
     }

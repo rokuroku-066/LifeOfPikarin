@@ -16,12 +16,13 @@ Implement explicit environment resource patches with configurable spawn position
 - [x] (2024-05-26 01:25Z) Update World to initialize EnvironmentGrid from config and tick environment systems each step.
 - [x] (2024-05-26 01:35Z) Add unit tests for resource regeneration/consumption and hazard decay.
 - [x] (2024-05-26 01:45Z) Run test suite and summarize results (blocked: dotnet SDK not installed in container).
+- [x] (2025-12-10 20:38Z) Run `dotnet test tests/SimTests/SimTests.csproj` on Windows (.NET 8.416); all tests passing.
 - [x] (2024-05-26 02:00Z) Review outcomes and finalize documentation in this plan.
 
 ## Surprises & Discoveries
 
 - None observed during implementation; environment refactor compiled conceptually without unexpected constraints.
-- Unable to run `dotnet test` because the container lacks the .NET SDK (`dotnet` command missing).
+- Initial work was blocked on `dotnet test` due to missing SDK; later verified on Windows with .NET 8.416 (tests pass).
 - Added a small follow-up to avoid per-tick allocations when regenerating resources by reusing a preallocated key list.
 
 ## Decision Log
@@ -36,7 +37,7 @@ Implement explicit environment resource patches with configurable spawn position
 ## Outcomes & Retrospective
 
 - Implemented configurable resource patches plus hazard/pheromone fields with diffusion and decay hooks in EnvironmentGrid and World.
-- Added unit tests for regeneration and hazard behavior; test execution is blocked in-container due to missing .NET SDK, so verification requires an environment with `dotnet` available.
+- Added unit tests for regeneration and hazard behavior; now validated on Windows (.NET 8.416) with `dotnet test tests/SimTests/SimTests.csproj` passing.
 
 ## Context and Orientation
 
