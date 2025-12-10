@@ -17,6 +17,9 @@ namespace Terrarium.Sim
         private readonly List<Vec2> _neighborOffsets = new();
         private readonly List<Agent> _neighborAgents = new();
         private readonly HashSet<int> _groupScratch = new();
+        private readonly List<(Vec2 Position, float Amount)> _pendingFoodEvents = new();
+        private readonly List<(Vec2 Position, float Amount)> _pendingDangerEvents = new();
+        private readonly List<(Vec2 Position, int GroupId, float Amount)> _pendingPheromoneEvents = new();
         private int _nextId;
 
         public World(SimulationConfig config)
@@ -40,6 +43,9 @@ namespace Terrarium.Sim
             _neighborOffsets.Clear();
             _neighborAgents.Clear();
             _groupScratch.Clear();
+            _pendingFoodEvents.Clear();
+            _pendingDangerEvents.Clear();
+            _pendingPheromoneEvents.Clear();
             _rng.Reset();
             _idToIndex.Clear();
             _metrics.Clear();
@@ -50,6 +56,9 @@ namespace Terrarium.Sim
         public TickMetrics Step(int tick)
         {
             var sw = Stopwatch.StartNew();
+            _pendingFoodEvents.Clear();
+            _pendingDangerEvents.Clear();
+            _pendingPheromoneEvents.Clear();
             RefreshIndexMap();
             _grid.Clear();
             for (var i = 0; i < _agents.Count; i++)
@@ -73,7 +82,7 @@ namespace Terrarium.Sim
                 CollectNeighborData(agent, neighbors);
                 neighborChecks += _neighborAgents.Count;
 
-                var desired = ComputeDesiredVelocity(agent, _neighborAgents, _neighborOffsets);
+                var desired = ComputeDesiredVelocity(agent, _neighborAgents, _neighborOffsets, out var sensedDanger);
                 var accel = desired - agent.Velocity;
                 var accelMag = accel.Length;
                 if (accelMag > _config.Species.MaxAcceleration)
@@ -92,11 +101,16 @@ namespace Terrarium.Sim
                 agent.Position = Wrap(agent.Position, _config.WorldSize);
                 agent.Age += _config.TimeStep;
 
-                ApplyLifeCycle(agent, _neighborAgents.Count, ref births);
+                ApplyLifeCycle(agent, _neighborAgents.Count, ref births, _pendingFoodEvents, _pendingPheromoneEvents);
+                if (agent.State == AgentState.Flee || sensedDanger)
+                {
+                    _pendingDangerEvents.Add((agent.Position, _config.Environment.DangerPulseOnFlee));
+                }
 
                 _agents[i] = agent;
             }
 
+            ApplyFieldEvents();
             _environment.Tick(_config.TimeStep);
             ApplyBirths();
             RemoveDead(ref deaths);
@@ -153,44 +167,78 @@ namespace Terrarium.Sim
         }
     }
 
-    private Vec2 ComputeDesiredVelocity(Agent agent, IReadOnlyList<Agent> neighbors, IReadOnlyList<Vec2> neighborOffsets)
+    private Vec2 ComputeDesiredVelocity(
+        Agent agent,
+        IReadOnlyList<Agent> neighbors,
+        IReadOnlyList<Vec2> neighborOffsets,
+        out bool sensedDanger)
     {
         var desired = new Vec2(0, 0);
+        var fleeVector = new Vec2(0, 0);
+        sensedDanger = false;
+
         for (var i = 0; i < neighbors.Count; i++)
         {
             var other = neighbors[i];
             var toOther = neighborOffsets[i];
             if (other.GroupId != agent.GroupId && toOther.LengthSquared < 4f)
             {
-                desired -= toOther.Normalized() * _config.Species.BaseSpeed; // flee
-                agent.State = AgentState.Flee;
+                fleeVector -= toOther.Normalized() * _config.Species.BaseSpeed;
+                sensedDanger = true;
             }
         }
 
-        if (agent.State == AgentState.Flee)
+        var dangerLevel = _environment.SampleDanger(agent.Position);
+        if (dangerLevel > 0.1f)
         {
-            return desired;
+            sensedDanger = true;
+            var dangerGradient = DangerGradient(agent.Position);
+            if (dangerGradient.LengthSquared < 1e-4f)
+            {
+                dangerGradient = _rng.NextUnitCircle();
+            }
+            fleeVector -= dangerGradient.Normalized() * (_config.Species.BaseSpeed * MathF.Min(1f, dangerLevel));
         }
 
-        var food = _environment.Sample(agent.Position);
-        if (agent.Energy < _config.Species.ReproductionEnergyThreshold * 0.6f || food > _config.Environment.ResourcePerCell * 0.5f)
+        if (fleeVector.LengthSquared > 0.001f)
+        {
+            agent.State = AgentState.Flee;
+            return fleeVector;
+        }
+
+        var foodHere = _environment.SampleFood(agent.Position);
+        var foodGradient = FoodGradient(agent.Position);
+        var pheromoneGradient = PheromoneGradient(agent.GroupId, agent.Position);
+        var dangerGradientAway = DangerGradient(agent.Position);
+
+        var foodBias = foodGradient.LengthSquared > 1e-4f ? foodGradient.Normalized() : new Vec2(0, 0);
+        var pheromoneBias = pheromoneGradient.LengthSquared > 1e-4f ? pheromoneGradient.Normalized() : new Vec2(0, 0);
+        var dangerBias = dangerGradientAway.LengthSquared > 1e-4f ? dangerGradientAway.Normalized() : new Vec2(0, 0);
+
+        if (agent.Energy < _config.Species.ReproductionEnergyThreshold * 0.6f ||
+            foodHere > _config.Environment.FoodPerCell * 0.5f ||
+            foodGradient.LengthSquared > 0.01f)
         {
             agent.State = AgentState.SeekingFood;
-            desired += _rng.NextUnitCircle() * (_config.Species.BaseSpeed * 0.4f);
+            desired += foodBias * (_config.Species.BaseSpeed * 0.4f);
+            desired += _rng.NextUnitCircle() * (_config.Species.BaseSpeed * 0.25f);
         }
         else if (agent.Energy > _config.Species.ReproductionEnergyThreshold && agent.Age > _config.Species.AdultAge)
         {
             agent.State = AgentState.SeekingMate;
             desired += Cohesion(neighborOffsets) * (_config.Species.BaseSpeed * 0.8f);
+            desired += pheromoneBias * (_config.Species.BaseSpeed * 0.25f);
         }
         else
         {
             agent.State = AgentState.Wander;
             desired += _rng.NextUnitCircle() * (_config.Species.BaseSpeed * _config.Species.WanderJitter);
+            desired += pheromoneBias * (_config.Species.BaseSpeed * 0.15f);
         }
 
         desired += Separation(neighborOffsets) * (_config.Species.BaseSpeed * 1.2f);
         desired += Alignment(agent, neighbors) * (_config.Species.BaseSpeed * 0.3f);
+        desired -= dangerBias * (_config.Species.BaseSpeed * 0.2f);
         return desired;
     }
 
@@ -249,7 +297,42 @@ namespace Terrarium.Sim
         return center.Normalized();
     }
 
-    private void ApplyLifeCycle(Agent agent, int neighborCount, ref int births)
+    private Vec2 FoodGradient(Vec2 position)
+    {
+        var step = _config.CellSize;
+        var right = _environment.PeekFood(position + new Vec2(step, 0));
+        var left = _environment.PeekFood(position + new Vec2(-step, 0));
+        var up = _environment.PeekFood(position + new Vec2(0, step));
+        var down = _environment.PeekFood(position + new Vec2(0, -step));
+        return new Vec2(right - left, up - down);
+    }
+
+    private Vec2 PheromoneGradient(int groupId, Vec2 position)
+    {
+        var step = _config.CellSize;
+        var right = _environment.SamplePheromone(position + new Vec2(step, 0), groupId);
+        var left = _environment.SamplePheromone(position + new Vec2(-step, 0), groupId);
+        var up = _environment.SamplePheromone(position + new Vec2(0, step), groupId);
+        var down = _environment.SamplePheromone(position + new Vec2(0, -step), groupId);
+        return new Vec2(right - left, up - down);
+    }
+
+    private Vec2 DangerGradient(Vec2 position)
+    {
+        var step = _config.CellSize;
+        var right = _environment.SampleDanger(position + new Vec2(step, 0));
+        var left = _environment.SampleDanger(position + new Vec2(-step, 0));
+        var up = _environment.SampleDanger(position + new Vec2(0, step));
+        var down = _environment.SampleDanger(position + new Vec2(0, -step));
+        return new Vec2(right - left, up - down);
+    }
+
+    private void ApplyLifeCycle(
+        Agent agent,
+        int neighborCount,
+        ref int births,
+        List<(Vec2 Position, float Amount)> foodEvents,
+        List<(Vec2 Position, int GroupId, float Amount)> pheromoneEvents)
     {
         var dt = _config.TimeStep;
         var speedCost = agent.Velocity.Length * 0.05f;
@@ -263,6 +346,7 @@ namespace Terrarium.Sim
             if (_rng.NextFloat() < neighborCount * _config.Feedback.DiseaseProbabilityPerNeighbor * dt)
             {
                 agent.Alive = false;
+                foodEvents.Add((agent.Position, _config.Environment.FoodFromDeath));
                 return;
             }
         }
@@ -271,11 +355,11 @@ namespace Terrarium.Sim
             agent.Stress = MathF.Max(0, agent.Stress - 0.05f * dt);
         }
 
-        var available = _environment.Sample(agent.Position);
+        var available = _environment.SampleFood(agent.Position);
         if (available > 0)
         {
-            var consumed = MathF.Min(available, _config.Environment.ConsumptionRate * dt);
-            _environment.Consume(agent.Position, consumed);
+            var consumed = MathF.Min(available, _config.Environment.FoodConsumptionRate * dt);
+            _environment.ConsumeFood(agent.Position, consumed);
             agent.Energy += consumed;
         }
 
@@ -303,12 +387,14 @@ namespace Terrarium.Sim
                 };
                 _birthQueue.Add(child);
                 births++;
+                pheromoneEvents.Add((agent.Position, agent.GroupId, _config.Environment.PheromoneDepositOnBirth));
             }
         }
 
         if (agent.Energy <= 0 || agent.Age >= _config.Species.MaxAge)
         {
             agent.Alive = false;
+            foodEvents.Add((agent.Position, _config.Environment.FoodFromDeath));
         }
     }
 
@@ -320,6 +406,31 @@ namespace Terrarium.Sim
             return Math.Abs(groupId + delta) % 8;
         }
         return groupId;
+    }
+
+    private void ApplyFieldEvents()
+    {
+        for (var i = 0; i < _pendingFoodEvents.Count; i++)
+        {
+            var evt = _pendingFoodEvents[i];
+            _environment.AddFood(evt.Position, evt.Amount);
+        }
+
+        for (var i = 0; i < _pendingDangerEvents.Count; i++)
+        {
+            var evt = _pendingDangerEvents[i];
+            _environment.AddDanger(evt.Position, evt.Amount);
+        }
+
+        for (var i = 0; i < _pendingPheromoneEvents.Count; i++)
+        {
+            var evt = _pendingPheromoneEvents[i];
+            _environment.AddPheromone(evt.Position, evt.GroupId, evt.Amount);
+        }
+
+        _pendingFoodEvents.Clear();
+        _pendingDangerEvents.Clear();
+        _pendingPheromoneEvents.Clear();
     }
 
     private void ApplyBirths()

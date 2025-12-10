@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using Terrarium.Sim;
 using Xunit;
 
@@ -128,12 +129,12 @@ namespace Terrarium.SimTests
         }
 
         [Fact]
-        public void ResourcePatchesRegenerateAndCap()
+        public void FoodPatchesRegenerateAndCap()
         {
             var envConfig = new EnvironmentConfig
             {
-                ResourcePerCell = 10f,
-                ResourceRegenPerSecond = 1f,
+                FoodPerCell = 10f,
+                FoodRegenPerSecond = 1f,
                 ResourcePatches = new[]
                 {
                     new ResourcePatchConfig
@@ -149,37 +150,104 @@ namespace Terrarium.SimTests
 
             var grid = new EnvironmentGrid(1f, envConfig);
             grid.Tick(1f); // regen applies without sampling
-            var valueAfterRegen = grid.Sample(new Vec2(0, 0));
+            var valueAfterRegen = grid.SampleFood(new Vec2(0, 0));
             Assert.InRange(valueAfterRegen, 6.9f, 7.1f);
 
-            grid.Consume(new Vec2(0, 0), 6f);
+            grid.ConsumeFood(new Vec2(0, 0), 6f);
             grid.Tick(1f);
-            Assert.InRange(grid.Sample(new Vec2(0, 0)), 5.9f, 6.1f);
+            Assert.InRange(grid.SampleFood(new Vec2(0, 0)), 5.9f, 6.1f);
 
             grid.Tick(1f);
-            Assert.Equal(10f, grid.Sample(new Vec2(0, 0)), 3);
+            Assert.Equal(10f, grid.SampleFood(new Vec2(0, 0)), 3);
         }
 
         [Fact]
-        public void HazardFieldDecaysAndDiffuses()
+        public void DangerFieldDecaysAndDiffuses()
         {
             var envConfig = new EnvironmentConfig
             {
-                ResourcePerCell = 0f,
-                ResourceRegenPerSecond = 0f,
-                HazardDiffusionRate = 0.5f,
-                HazardDecayRate = 0.1f
+                FoodPerCell = 0f,
+                FoodRegenPerSecond = 0f,
+                DangerDiffusionRate = 0.5f,
+                DangerDecayRate = 0.1f
             };
 
             var grid = new EnvironmentGrid(1f, envConfig);
-            grid.AddHazard(new Vec2(0, 0), 10f);
+            grid.AddDanger(new Vec2(0, 0), 10f);
             grid.Tick(1f);
 
-            var center = grid.SampleHazard(new Vec2(0, 0));
-            var east = grid.SampleHazard(new Vec2(1f, 0));
+            var center = grid.SampleDanger(new Vec2(0, 0));
+            var east = grid.SampleDanger(new Vec2(1f, 0));
 
             Assert.InRange(center, 4.49f, 4.51f);
             Assert.InRange(east, 1.124f, 1.126f);
+        }
+
+        [Fact]
+        public void PheromoneFieldDiffusesPerGroup()
+        {
+            var envConfig = new EnvironmentConfig
+            {
+                FoodPerCell = 0f,
+                FoodRegenPerSecond = 0f,
+                PheromoneDiffusionRate = 0.5f,
+                PheromoneDecayRate = 0.1f
+            };
+
+            var grid = new EnvironmentGrid(1f, envConfig);
+            grid.AddPheromone(new Vec2(0, 0), groupId: 1, amount: 8f);
+            grid.Tick(1f);
+
+            var ownGroupCenter = grid.SamplePheromone(new Vec2(0, 0), 1);
+            var otherGroupCenter = grid.SamplePheromone(new Vec2(0, 0), 2);
+            var neighbor = grid.SamplePheromone(new Vec2(1f, 0), 1);
+
+            Assert.True(ownGroupCenter > otherGroupCenter);
+            Assert.True(neighbor > 0f);
+        }
+
+        [Fact]
+        public void AgentsFleeFromDangerField()
+        {
+            var config = new SimulationConfig
+            {
+                TimeStep = 0.1f,
+                InitialPopulation = 1,
+                MaxPopulation = 5,
+                CellSize = 1f,
+                Seed = 9,
+                Species = new SpeciesConfig
+                {
+                    BaseSpeed = 2f,
+                    MaxAcceleration = 5f,
+                    VisionRadius = 0f,
+                    WanderJitter = 0f,
+                    MetabolismPerSecond = 0f,
+                    BirthEnergyCost = 0f,
+                    ReproductionEnergyThreshold = 100f,
+                    AdultAge = 999f
+                },
+                Environment = new EnvironmentConfig
+                {
+                    FoodPerCell = 0f,
+                    FoodRegenPerSecond = 0f,
+                    FoodConsumptionRate = 0f,
+                    DangerDiffusionRate = 0.2f,
+                    DangerDecayRate = 0f,
+                    DangerPulseOnFlee = 0f
+                }
+            };
+
+            var world = new World(config);
+            var envField = typeof(World).GetField("_environment", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .GetValue(world) as EnvironmentGrid;
+            Assert.NotNull(envField);
+            envField!.AddDanger(world.Agents[0].Position, 5f);
+
+            world.Step(0);
+
+            Assert.Equal(AgentState.Flee, world.Agents[0].State);
+            Assert.True(world.Agents[0].Velocity.Length > 0f);
         }
 
         private static TickMetrics CreateComparableMetrics(TickMetrics source)

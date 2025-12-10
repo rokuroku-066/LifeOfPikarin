@@ -142,14 +142,19 @@ namespace Terrarium.UnityView
         [System.Serializable]
         public sealed class EnvironmentConfigDto
         {
-            public float ResourcePerCell = 10f;
-            public float ResourceRegenPerSecond = 0.5f;
-            public float ConsumptionRate = 5f;
+            public float FoodPerCell = 10f;
+            public float FoodRegenPerSecond = 0.5f;
+            public float FoodConsumptionRate = 5f;
+            public float FoodDiffusionRate = 0f;
+            public float FoodDecayRate = 0f;
+            public float FoodFromDeath = 1f;
             public List<ResourcePatchDto> ResourcePatches = new();
-            public float HazardDiffusionRate = 0f;
-            public float HazardDecayRate = 0f;
+            public float DangerDiffusionRate = 0f;
+            public float DangerDecayRate = 0f;
+            public float DangerPulseOnFlee = 1f;
             public float PheromoneDiffusionRate = 0f;
             public float PheromoneDecayRate = 0f;
+            public float PheromoneDepositOnBirth = 4f;
 
             public EnvironmentConfig ToSimConfig()
             {
@@ -161,14 +166,19 @@ namespace Terrarium.UnityView
 
                 return new EnvironmentConfig
                 {
-                    ResourcePerCell = ResourcePerCell,
-                    ResourceRegenPerSecond = ResourceRegenPerSecond,
-                    ConsumptionRate = ConsumptionRate,
+                    FoodPerCell = FoodPerCell,
+                    FoodRegenPerSecond = FoodRegenPerSecond,
+                    FoodConsumptionRate = FoodConsumptionRate,
+                    FoodDiffusionRate = FoodDiffusionRate,
+                    FoodDecayRate = FoodDecayRate,
+                    FoodFromDeath = FoodFromDeath,
                     ResourcePatches = patches,
-                    HazardDiffusionRate = HazardDiffusionRate,
-                    HazardDecayRate = HazardDecayRate,
+                    DangerDiffusionRate = DangerDiffusionRate,
+                    DangerDecayRate = DangerDecayRate,
+                    DangerPulseOnFlee = DangerPulseOnFlee,
                     PheromoneDiffusionRate = PheromoneDiffusionRate,
-                    PheromoneDecayRate = PheromoneDecayRate
+                    PheromoneDecayRate = PheromoneDecayRate,
+                    PheromoneDepositOnBirth = PheromoneDepositOnBirth
                 };
             }
         }
