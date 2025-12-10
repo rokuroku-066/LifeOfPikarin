@@ -1,3 +1,4 @@
+using System.IO;
 using Terrarium.Sim;
 using Xunit;
 
@@ -106,5 +107,23 @@ public class WorldTests
         Assert.Equal(0, metrics.Births);
         Assert.Equal(2, metrics.Deaths);
         Assert.Empty(world.Agents);
+    }
+
+    [Fact]
+    public void HeadlessRunnerWritesMetricsCsv()
+    {
+        var config = new SimulationConfig { Seed = 7, InitialPopulation = 5, MaxPopulation = 20 };
+        var world = new World(config);
+        using var buffer = new StringWriter();
+
+        HeadlessRunner.Run(world, 10, buffer, includeHeader: true);
+
+        var lines = buffer.ToString().Trim().Split('\n');
+        Assert.Equal(11, lines.Length); // header + 10 ticks
+        Assert.Equal("tick,population,births,deaths,avgEnergy,avgAge,groups,neighborChecks,tickDurationMs", lines[0]);
+        var fields = lines[1].Split(',');
+        Assert.Equal(9, fields.Length);
+        Assert.Equal("0", fields[0]);
+        Assert.True(int.Parse(fields[1]) > 0);
     }
 }

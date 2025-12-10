@@ -146,13 +146,14 @@ Phase 1 では主に **2種類のテスト** を想定しています。
 * エディタを使わずシミュレーションだけを回す「ステップ実行ツール」を用意することを推奨します。
 
   * 例: `src/Sim/Runner` 的な小さなコンソールアプリ／エディタスクリプト
+  * 本リポジトリでは `src/SimRunner` のコンソールアプリで提供しています。
 * コマンド例（コンソールアプリを想定）:
 
 ```bash
 dotnet run --project src/SimRunner \
-  --steps 10000 \
+  -- --steps 2000 \
   --seed 12345 \
-  --log stats.csv
+  --log artifacts/metrics.csv
 ```
 
 * 出力される `stats.csv` には
