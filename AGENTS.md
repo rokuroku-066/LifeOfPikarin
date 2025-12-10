@@ -114,4 +114,19 @@ If you cannot run Unity in the current environment, prioritize:
 - Verify Sim/View boundary is not violated.
 - Verify no O(N²) logic was introduced.
 - Verify long-run negative feedback mechanisms still exist and are not accidentally bypassed.
-- Verify deterministic seed handling remains intact. 
+- Verify deterministic seed handling remains intact.
+
+## How to run tests locally
+- First-time environment setup (Ubuntu/Debian):
+  - `sudo apt update`
+  - Install HTTPS transport helpers if missing: `sudo apt install -y apt-transport-https ca-certificates`
+  - Add Microsoft package feed (replace `$(lsb_release -rs)` if unavailable):
+    - `wget https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb -O packages-microsoft-prod.deb`
+    - `sudo dpkg -i packages-microsoft-prod.deb`
+    - `rm packages-microsoft-prod.deb`
+  - Install .NET 8 SDK: `sudo apt update && sudo apt install -y dotnet-sdk-8.0`
+  - Verify install: `dotnet --info`
+- Ensure the .NET SDK (8.0 or later) is installed and available on your PATH.
+- From the repository root, run the simulation unit tests:
+  - `dotnet test tests/SimTests/SimTests.csproj`
+- If you add new test projects, list their invocation here to keep validation steps discoverable.
