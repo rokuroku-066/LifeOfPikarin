@@ -108,6 +108,12 @@ If you cannot run Unity in the current environment, prioritize:
 - Keep per-agent data compact and contiguous (arrays/structs preferred).
 - Record basic performance counters (tick time, neighbor checks, etc.) so regressions can be caught early.
 
+## Mandatory test execution for any modification
+To keep the Unity-compatible simulation stable, **run the simulation unit tests every time you make a change**:
+1. From the repository root, ensure the .NET SDK (8.0 or later) is available (`dotnet --info`).
+2. Execute `dotnet test tests/SimTests/SimTests.csproj` and wait for it to finish.
+3. If the environment prevents running the test suite, document the reason in your commit message or PR description along with any manual verification performed.
+
 ---
 
 ## Review guidelines (if doing code review)
