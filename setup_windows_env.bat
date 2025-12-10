@@ -89,6 +89,8 @@ if defined UNITY_EDITOR_FOUND (
     )
 )
 
+set "DOTNET_CMD=dotnet"
+
 if defined NEED_DOTNET (
     echo ---
     echo .NET 8 SDK を winget からインストールします。管理者権限が求められる場合があります。
@@ -104,25 +106,33 @@ if defined NEED_DOTNET (
         echo [ERROR] .NET 8 SDK のインストールに失敗しました。
         exit /b 1
     )
+
+    if exist "%ProgramFiles%\dotnet\dotnet.exe" (
+        set "DOTNET_CMD=%ProgramFiles%\dotnet\dotnet.exe"
+        set "PATH=%ProgramFiles%\dotnet;%PATH%"
+    ) else if exist "%ProgramFiles(x86)%\dotnet\dotnet.exe" (
+        set "DOTNET_CMD=%ProgramFiles(x86)%\dotnet\dotnet.exe"
+        set "PATH=%ProgramFiles(x86)%\dotnet;%PATH%"
+    )
 )
 
 echo ---
 echo dotnet --info で SDK を確認します。
-dotnet --info
+"%DOTNET_CMD%" --info
 if errorlevel 1 (
     echo [ERROR] dotnet --info に失敗しました。
     exit /b 1
 )
 
 echo === NuGet 復元 ===
-dotnet restore Terrarium.sln
+"%DOTNET_CMD%" restore Terrarium.sln
 if errorlevel 1 (
     echo [ERROR] 依存関係の復元に失敗しました。
     exit /b 1
 )
 
 echo === シミュレーションテスト実行 ===
-dotnet test tests\SimTests\SimTests.csproj
+"%DOTNET_CMD%" test tests\SimTests\SimTests.csproj
 if errorlevel 1 (
     echo [ERROR] テストが失敗しました。詳細を確認してください。
     exit /b 1
