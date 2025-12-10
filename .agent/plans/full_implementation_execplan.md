@@ -18,6 +18,7 @@ Use a list with checkboxes to summarize granular steps. Every stopping point mus
 - [x] (2025-12-10 03:55Z) Reviewed DESIGN.md vs. implementation; tightened SpatialGrid to respect vision radius, removed per-tick allocations in neighbor processing, and expanded tests for locality.
 - [x] (2025-12-10 04:25Z) Installed dotnet-sdk-8.0, ran `dotnet test`, and aligned deterministic comparisons to ignore wall-clock tick duration noise.
 - [x] (2025-12-10 05:00Z) Re-reviewed DESIGN.md/ExecPlan alignment, fixed death metric double-counting with regression coverage, added solution scaffolding for Sim/View/Tests, and reran tests.
+- [x] (2025-05-18 12:00Z) Corrected `World.Reset` to rebuild deterministic RNG/environment/grid state and clear transient caches so restarted runs mirror new world construction.
 
 ## Surprises & Discoveries
 

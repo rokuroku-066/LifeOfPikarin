@@ -35,6 +35,10 @@ public sealed class World
         _agents.Clear();
         _birthQueue.Clear();
         _environment.Reset();
+        _grid.Clear();
+        _neighborOffsets.Clear();
+        _neighborAgents.Clear();
+        _groupScratch.Clear();
         _rng.Reset();
         _idToIndex.Clear();
         _metrics.Clear();
