@@ -31,14 +31,19 @@ namespace Terrarium.Sim
 
     public sealed class EnvironmentConfig
     {
-        public float ResourcePerCell { get; set; } = 10f;
-        public float ResourceRegenPerSecond { get; set; } = 0.5f;
-        public float ConsumptionRate { get; set; } = 5f;
+        public float FoodPerCell { get; set; } = 10f;
+        public float FoodRegenPerSecond { get; set; } = 0.5f;
+        public float FoodConsumptionRate { get; set; } = 5f;
+        public float FoodDiffusionRate { get; set; } = 0f;
+        public float FoodDecayRate { get; set; } = 0f;
+        public float FoodFromDeath { get; set; } = 1f;
         public IReadOnlyList<ResourcePatchConfig> ResourcePatches { get; set; } = Array.Empty<ResourcePatchConfig>();
-        public float HazardDiffusionRate { get; set; } = 0f;
-        public float HazardDecayRate { get; set; } = 0f;
+        public float DangerDiffusionRate { get; set; } = 0f;
+        public float DangerDecayRate { get; set; } = 0f;
+        public float DangerPulseOnFlee { get; set; } = 1f;
         public float PheromoneDiffusionRate { get; set; } = 0f;
         public float PheromoneDecayRate { get; set; } = 0f;
+        public float PheromoneDepositOnBirth { get; set; } = 4f;
     }
 
     public sealed class ResourcePatchConfig
