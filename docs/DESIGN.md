@@ -517,3 +517,10 @@ Guideless ALife ãƒ¢ãƒ‡ãƒ«ã®ã‚ˆã†ã«ã€äº‹å‰ã®é©å¿œåº¦é–¢æ•°ã‚’æ±ºã‚ãšã€
 [3]: https://game.engineering.nyu.edu/research/amorphous-fortress/?utm_source=chatgpt.com "Amorphous Fortress - Game Innovation Lab"
 [4]: https://direct.mit.edu/artl/article/31/1/31/127798/Guideless-Artificial-Life-Model-for-Reproduction?utm_source=chatgpt.com "Guideless Artificial Life Model for Reproduction ..."
 [5]: https://arxiv.org/html/2306.13169?utm_source=chatgpt.com "Observing Emergent Behavior in Multi-Agent FSMs"
+## •t˜^: 2025-12 ˆÀ’è‰»ƒ`ƒ…[ƒjƒ“ƒOƒƒ‚
+
+- ‰ŠúƒGƒlƒ‹ƒM[‚ğ”ÉBè‡’l‚Ì 80% ‚Éˆø‚«ã‚°A”ÉBè‡’l‚ğ 12A¬‘Ì”N—î‚ğ 5 ‚É‰º‚°‚Ä—§‚¿ã‚ª‚è‚ğ‘‚­‚µ‚½B
+- ”ÉBŠm—¦‚Í‹ÇŠ–§“x’´‰ß‚É‰‚¶‚ÄŠŠ‚ç‚©‚ÉŒ¸­‚·‚éiDensityReproductionPenalty ‚ğŠî“_‚É DensityReproductionSlope ‚Å’üŒ¸jB‹óŠÔƒOƒŠƒbƒh‚Ì‹ß–T‚¾‚¯‚ğ”‚¦‚é‚Ì‚Å O(N2) ‚É‚Í‚È‚ç‚È‚¢B
+- ‚ƒGƒlƒ‹ƒM[ó‘Ô‚É‚Í’Ç‰Á‚Ì‘ãÓƒRƒXƒgiEnergySoftCap, HighEnergyMetabolismSlopej‚ğ‰Û‚µAƒGƒlƒ‹ƒM[‚ÌÏ‚İã‚ª‚è‚ğ–h‚®B
+- Šî‘bE‰Á—îE–§“x‚É”ä—á‚·‚é€–SƒnƒU[ƒhiBaseDeathProbabilityPerSecond, AgeDeathProbabilityPerSecond, DensityDeathProbabilityPerNeighborPerSecondj‚ğ“±“ü‚µAo¶/€–S‚ÌƒTƒCƒNƒ‹‚ª~‚Ü‚ç‚È‚¢‚æ‚¤‚É‚µ‚½B
+- ‚·‚×‚Ä‚Ìˆ—‚Í Simulation ‘¤‚É•Â‚¶‚Ä‚¨‚èAView ‚Íó‘Ô‚ğ“Ç‚Ş‚¾‚¯‚Å§Œä‚µ‚È‚¢B•‰‚ÌƒtƒB[ƒhƒoƒbƒN‚Í‹ÇŠî•ñ‚Ì‚İ‚ÅŒvZ‚µAŒˆ’è˜_“I RNG ‚ğg‚¤‚½‚ßƒŠƒvƒŒƒC‰Â”\B

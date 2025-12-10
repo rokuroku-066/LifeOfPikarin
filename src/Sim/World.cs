@@ -134,7 +134,7 @@ namespace Terrarium.Sim
                     GroupId = group,
                     Position = pos,
                     Velocity = _rng.NextUnitCircle() * _config.Species.BaseSpeed * 0.3f,
-                    Energy = _config.Species.ReproductionEnergyThreshold * 0.5f,
+                    Energy = _config.Species.ReproductionEnergyThreshold * _config.Species.InitialEnergyFractionOfThreshold,
                     Age = 0,
                     State = AgentState.Wander,
                     Alive = true,
@@ -337,6 +337,8 @@ namespace Terrarium.Sim
         var dt = _config.TimeStep;
         var speedCost = agent.Velocity.Length * 0.05f;
         var metabolism = _config.Species.MetabolismPerSecond * dt + speedCost * dt;
+        var excessEnergy = MathF.Max(0f, agent.Energy - _config.Species.EnergySoftCap);
+        metabolism += excessEnergy * _config.Species.HighEnergyMetabolismSlope * dt;
         var stressDrain = neighborCount * _config.Feedback.StressDrainPerNeighbor * dt;
         agent.Energy -= metabolism + stressDrain + agent.Stress * dt;
 
@@ -367,8 +369,17 @@ namespace Terrarium.Sim
             agent.Age > _config.Species.AdultAge &&
             _agents.Count + _birthQueue.Count < _config.MaxPopulation)
         {
-            var densityPenalty = neighborCount > _config.Feedback.LocalDensitySoftCap ? _config.Feedback.DensityReproductionPenalty : 1f;
-            if (_rng.NextFloat() < 0.2f * densityPenalty)
+            var densityFactor = 1f;
+            if (neighborCount > _config.Feedback.LocalDensitySoftCap)
+            {
+                var excess = neighborCount - _config.Feedback.LocalDensitySoftCap;
+                var drop = excess * _config.Feedback.DensityReproductionSlope;
+                densityFactor = MathF.Max(0f, MathF.Min(1f, _config.Feedback.DensityReproductionPenalty - drop));
+            }
+
+            var reproductionChance = 0.25f * densityFactor;
+            reproductionChance = MathF.Max(0f, MathF.Min(1f, reproductionChance));
+            if (_rng.NextFloat() < reproductionChance)
             {
                 var childEnergy = agent.Energy * 0.5f;
                 agent.Energy -= childEnergy + _config.Species.BirthEnergyCost;
@@ -389,6 +400,18 @@ namespace Terrarium.Sim
                 births++;
                 pheromoneEvents.Add((agent.Position, agent.GroupId, _config.Environment.PheromoneDepositOnBirth));
             }
+        }
+
+        var hazardPerSecond =
+            _config.Feedback.BaseDeathProbabilityPerSecond +
+            agent.Age * _config.Feedback.AgeDeathProbabilityPerSecond +
+            neighborCount * _config.Feedback.DensityDeathProbabilityPerNeighborPerSecond;
+        var hazardChance = MathF.Min(1f, hazardPerSecond * dt);
+        if (hazardChance > 0f && _rng.NextFloat() < hazardChance)
+        {
+            agent.Alive = false;
+            foodEvents.Add((agent.Position, _config.Environment.FoodFromDeath));
+            return;
         }
 
         if (agent.Energy <= 0 || agent.Age >= _config.Species.MaxAge)

@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Reflection;
 using Terrarium.Sim;
@@ -119,7 +120,7 @@ namespace Terrarium.SimTests
 
             HeadlessRunner.Run(world, 10, buffer, includeHeader: true);
 
-            var lines = buffer.ToString().Trim().Split('\n');
+            var lines = buffer.ToString().Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
             Assert.Equal(11, lines.Length); // header + 10 ticks
             Assert.Equal("tick,population,births,deaths,avgEnergy,avgAge,groups,neighborChecks,tickDurationMs", lines[0]);
             var fields = lines[1].Split(',');
