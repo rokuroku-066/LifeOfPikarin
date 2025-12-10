@@ -105,6 +105,8 @@ dotnet test tests/SimTests/SimTests.csproj
 1. Unity Hub でこのリポジトリを開き、Unity 6.x LTS でロードします。
 2. シーン（例: `Assets/Scenes/Terrarium.unity`）を開いて `Play` を押すと、固定カメラ視点でキューブ群の挙動が確認できます。
 3. 表示側では `src/Unity/` のマッピングコードを通じて、Simulation から受け取ったスナップショットを GPU インスタンシングで描画する想定です。Sim 側のロジックは描画事情で止めないようにしてください。
+4. `TerrariumHost` (`src/Unity/TerrariumHost.cs`) をシーンに置き、インスペクタでタイムステップや初期個体数などを設定します。`CubeInstancedRenderer` を同じオブジェクトまたは別オブジェクトにアタッチし、ホストの `Renderer` フィールドにアサインするか、別スクリプトから `RenderWith(...)` を呼び出してください。
+5. `CubeInstancedRenderer` (`src/Unity/CubeInstancedRenderer.cs`) はキューブメッシュ＋GPU インスタンシング対応マテリアルをシリアライズフィールドで受け取り、毎フレーム `Render` でスナップショット配列を描画します。色は `AgentSnapshot.ColorHue` を HSV→RGB 変換してインスタンス毎に適用します。
 
 ---
 

@@ -45,6 +45,12 @@ Codex: Read this file before doing any work and follow it as default working agr
 - No FBX rigs/Animator complexity in Phase 1.
 - Focus: simulation correctness, performance, long-run stability, and visually legible emergent group behaviors.
 
+Unity integration currently lives under `src/Unity/`:
+- `TerrariumHost` (`Terrarium.UnityView`) builds a `World` from inspector-friendly DTOs, ticks it on a fixed timestep, and exposes `AgentSnapshot` arrays each frame.
+- `CubeInstancedRenderer` batches those snapshots into `Graphics.DrawMeshInstanced` calls using a cube mesh and a GPU-instancing-enabled material (colors via `_Color`).
+
+When validating visuals in Unity, wire the host to a renderer (assign the serialized reference or call `RenderWith`), let the host drive the simulation, and keep simulation timing independent from the render loop.
+
 Phase 2 (FBX replacement) will happen later; do not pre-optimize for FBX beyond keeping the Sim/View boundary clean.
 
 ---
@@ -109,15 +115,21 @@ If you cannot run Unity in the current environment, prioritize:
 - Record basic performance counters (tick time, neighbor checks, etc.) so regressions can be caught early.
 
 ## Mandatory test execution for any modification
-To keep the Unity-compatible simulation stable, **run the simulation unit tests every time you make a change**:
-1. From the repository root, ensure the .NET SDK (8.0 or later) is available (`dotnet --info`).
-2. Execute `dotnet test tests/SimTests/SimTests.csproj` and wait for it to finish.
-3. If the environment prevents running the test suite, document the reason in your commit message or PR description along with any manual verification performed.
+To keep the Unity-compatible simulation stable, **you must run the simulation unit tests for every change (no exceptions)**:
+1. Before writing code, confirm the .NET SDK (8.0 or later) is available with `dotnet --info`.
+2. Execute `dotnet test tests/SimTests/SimTests.csproj` from the repository root and wait for it to finish on every edit.
+3. If the environment prevents running the test suite, explicitly state the blocking reason in your commit message or PR description and record any manual verification performed.
 
 If `dotnet` is not present on your PATH, install it **before** making code changes so the tests can run:
-1. Follow the steps in [How to run tests locally](#how-to-run-tests-locally) to install the .NET SDK.
+1. Follow the steps in [How to run tests locally](#how-to-run-tests-locally) to install the .NET SDK (do not start coding until this succeeds).
 2. Re-open your shell or refresh your PATH if needed, then verify with `dotnet --info`.
 3. Only proceed with development after the SDK is available and the test command succeeds.
+
+## Keep code, tests, and docs synchronized
+When you change source code, **update the related tests and documentation in the same change**:
+- Add or adjust tests that cover the new or modified behavior before you consider the work complete.
+- Revise README/AGENTS/design notes or in-repo docs so setup and usage instructions stay accurate.
+- Do not defer documentation/test fixes to “later”; treat them as part of the same task.
 
 ---
 
@@ -136,8 +148,8 @@ If `dotnet` is not present on your PATH, install it **before** making code chang
     - `sudo dpkg -i packages-microsoft-prod.deb`
     - `rm packages-microsoft-prod.deb`
   - Install .NET 8 SDK: `sudo apt update && sudo apt install -y dotnet-sdk-8.0`
-  - Verify install: `dotnet --info`
+  - Verify install: `dotnet --info` (must show an 8.0.x SDK entry before proceeding).
 - Ensure the .NET SDK (8.0 or later) is installed and available on your PATH.
-- From the repository root, run the simulation unit tests:
+- From the repository root, run the simulation unit tests (required for every change):
   - `dotnet test tests/SimTests/SimTests.csproj`
 - If you add new test projects, list their invocation here to keep validation steps discoverable.
