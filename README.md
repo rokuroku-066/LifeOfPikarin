@@ -54,8 +54,8 @@
 ## 🚀 セットアップ手順
 
 1. リポジトリをクローン
-   ```bash
-git clone <このリポジトリのURL>
+```bash
+git clone https://github.com/rokuroku-066/LifeOfPikarin.git
 cd LifeOfPikarin
 ```
 2. .NET SDK をインストールして `dotnet --info` で 8.x が利用できることを確認。
