@@ -22,7 +22,7 @@ namespace Terrarium.UnityView
                     Position = agent.Position,
                     Velocity = agent.Velocity,
                     Scale = 1f + MathF.Min(1.5f, agent.Age * 0.05f),
-                    ColorHue = (agent.GroupId % 8) / 8f,
+                    ColorHue = agent.GroupId >= 0 ? (agent.GroupId % 8) / 8f : 0.08f,
                     State = agent.State
                 });
             }

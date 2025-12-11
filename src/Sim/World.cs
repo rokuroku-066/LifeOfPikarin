@@ -6,6 +6,8 @@ namespace Terrarium.Sim
 {
     public sealed class World
     {
+        private const int UngroupedGroupId = -1;
+
         private readonly SimulationConfig _config;
         private readonly DeterministicRng _rng;
         private readonly SpatialGrid _grid;
@@ -20,7 +22,10 @@ namespace Terrarium.Sim
         private readonly List<(Vec2 Position, float Amount)> _pendingFoodEvents = new();
         private readonly List<(Vec2 Position, float Amount)> _pendingDangerEvents = new();
         private readonly List<(Vec2 Position, int GroupId, float Amount)> _pendingPheromoneEvents = new();
+        private readonly Dictionary<int, int> _groupCountsScratch = new();
+        private readonly List<Agent> _ungroupedNeighbors = new();
         private int _nextId;
+        private int _nextGroupId;
 
         public World(SimulationConfig config)
         {
@@ -28,6 +33,7 @@ namespace Terrarium.Sim
             _rng = new DeterministicRng(config.Seed);
             _grid = new SpatialGrid(config.CellSize);
             _environment = new EnvironmentGrid(config.CellSize, config.Environment);
+            _nextGroupId = 0;
             BootstrapPopulation();
         }
 
@@ -50,6 +56,7 @@ namespace Terrarium.Sim
             _idToIndex.Clear();
             _metrics.Clear();
             _nextId = 0;
+            _nextGroupId = 0;
             BootstrapPopulation();
         }
 
@@ -59,6 +66,8 @@ namespace Terrarium.Sim
             _pendingFoodEvents.Clear();
             _pendingDangerEvents.Clear();
             _pendingPheromoneEvents.Clear();
+            var simTime = tick * _config.TimeStep;
+            var canFormGroups = simTime >= _config.Feedback.GroupFormationWarmupSeconds;
             RefreshIndexMap();
             _grid.Clear();
             for (var i = 0; i < _agents.Count; i++)
@@ -82,6 +91,8 @@ namespace Terrarium.Sim
                 CollectNeighborData(agent, neighbors);
                 neighborChecks += _neighborAgents.Count;
 
+                UpdateGroupMembership(agent, _neighborAgents, canFormGroups);
+
                 var desired = ComputeDesiredVelocity(agent, _neighborAgents, _neighborOffsets, out var sensedDanger);
                 var accel = desired - agent.Velocity;
                 var accelMag = accel.Length;
@@ -101,7 +112,7 @@ namespace Terrarium.Sim
                 agent.Position = Wrap(agent.Position, _config.WorldSize);
                 agent.Age += _config.TimeStep;
 
-                ApplyLifeCycle(agent, _neighborAgents.Count, ref births, _pendingFoodEvents, _pendingPheromoneEvents);
+                ApplyLifeCycle(agent, _neighborAgents.Count, ref births, _pendingFoodEvents, _pendingPheromoneEvents, canFormGroups);
                 if (agent.State == AgentState.Flee || sensedDanger)
                 {
                     _pendingDangerEvents.Add((agent.Position, _config.Environment.DangerPulseOnFlee));
@@ -126,12 +137,11 @@ namespace Terrarium.Sim
             for (var i = 0; i < _config.InitialPopulation; i++)
             {
                 var pos = new Vec2(_rng.NextRange(0, _config.WorldSize), _rng.NextRange(0, _config.WorldSize));
-                var group = i % 4;
                 _agents.Add(new Agent
                 {
                     Id = _nextId++,
                     Generation = 0,
-                    GroupId = group,
+                    GroupId = UngroupedGroupId,
                     Position = pos,
                     Velocity = _rng.NextUnitCircle() * _config.Species.BaseSpeed * 0.3f,
                     Energy = _config.Species.ReproductionEnergyThreshold * _config.Species.InitialEnergyFractionOfThreshold,
@@ -184,26 +194,168 @@ namespace Terrarium.Sim
         }
     }
 
+    private void UpdateGroupMembership(Agent agent, IReadOnlyList<Agent> neighbors, bool canFormGroups)
+    {
+        var originalGroup = agent.GroupId;
+        _groupCountsScratch.Clear();
+        _ungroupedNeighbors.Clear();
+
+        var sameGroupNeighbors = 0;
+        for (var i = 0; i < neighbors.Count; i++)
+        {
+            var other = neighbors[i];
+            if (other.GroupId == UngroupedGroupId)
+            {
+                _ungroupedNeighbors.Add(other);
+            }
+
+            if (agent.GroupId != UngroupedGroupId && other.GroupId == agent.GroupId)
+            {
+                sameGroupNeighbors++;
+            }
+
+            if (other.GroupId >= 0)
+            {
+                if (_groupCountsScratch.TryGetValue(other.GroupId, out var count))
+                {
+                    _groupCountsScratch[other.GroupId] = count + 1;
+                }
+                else
+                {
+                    _groupCountsScratch[other.GroupId] = 1;
+                }
+            }
+        }
+
+        var majorityGroup = UngroupedGroupId;
+        var majorityCount = 0;
+        foreach (var kvp in _groupCountsScratch)
+        {
+            if (kvp.Value > majorityCount)
+            {
+                majorityGroup = kvp.Key;
+                majorityCount = kvp.Value;
+            }
+        }
+
+        if (canFormGroups)
+        {
+            TryFormGroup(agent);
+            if (agent.GroupId == originalGroup)
+            {
+                TryAdoptGroup(agent, majorityGroup, majorityCount);
+            }
+        }
+
+        TrySplitGroup(agent, sameGroupNeighbors, canFormGroups);
+
+        _groupCountsScratch.Clear();
+        _ungroupedNeighbors.Clear();
+    }
+
+    private void TryFormGroup(Agent agent)
+    {
+        if (agent.GroupId != UngroupedGroupId)
+        {
+            return;
+        }
+
+        if (_ungroupedNeighbors.Count < _config.Feedback.GroupFormationNeighborThreshold)
+        {
+            return;
+        }
+
+        if (_rng.NextFloat() >= _config.Feedback.GroupFormationChance)
+        {
+            return;
+        }
+
+        var newGroup = _nextGroupId++;
+        AdoptGroup(agent, newGroup);
+
+        var recruits = Math.Min(_ungroupedNeighbors.Count, _config.Feedback.GroupFormationNeighborThreshold + 2);
+        for (var i = 0; i < recruits; i++)
+        {
+            AdoptGroup(_ungroupedNeighbors[i], newGroup);
+        }
+    }
+
+    private void TryAdoptGroup(Agent agent, int majorityGroup, int majorityCount)
+    {
+        if (majorityGroup == UngroupedGroupId || agent.GroupId == majorityGroup)
+        {
+            return;
+        }
+
+        if (majorityCount < _config.Feedback.GroupAdoptionNeighborThreshold)
+        {
+            return;
+        }
+
+        if (_rng.NextFloat() < _config.Feedback.GroupAdoptionChance)
+        {
+            agent.GroupId = majorityGroup;
+        }
+    }
+
+    private void TrySplitGroup(Agent agent, int sameGroupNeighbors, bool canFormGroups)
+    {
+        if (agent.GroupId == UngroupedGroupId)
+        {
+            return;
+        }
+
+        if (sameGroupNeighbors < _config.Feedback.GroupSplitNeighborThreshold)
+        {
+            return;
+        }
+
+        if (agent.Stress < _config.Feedback.GroupSplitStressThreshold)
+        {
+            return;
+        }
+
+        if (_rng.NextFloat() < _config.Feedback.GroupSplitChance)
+        {
+            if (canFormGroups && _rng.NextFloat() < _config.Feedback.GroupSplitNewGroupChance)
+            {
+                agent.GroupId = _nextGroupId++;
+            }
+            else
+            {
+                agent.GroupId = UngroupedGroupId;
+            }
+        }
+    }
+
+    private static void AdoptGroup(Agent agent, int groupId)
+    {
+        agent.GroupId = groupId;
+    }
+
     private Vec2 ComputeDesiredVelocity(
         Agent agent,
         IReadOnlyList<Agent> neighbors,
         IReadOnlyList<Vec2> neighborOffsets,
         out bool sensedDanger)
-    {
-        var desired = new Vec2(0, 0);
-        var fleeVector = new Vec2(0, 0);
-        sensedDanger = false;
-
-        for (var i = 0; i < neighbors.Count; i++)
         {
-            var other = neighbors[i];
-            var toOther = neighborOffsets[i];
-            if (other.GroupId != agent.GroupId && toOther.LengthSquared < 4f)
+            var desired = new Vec2(0, 0);
+            var fleeVector = new Vec2(0, 0);
+            sensedDanger = false;
+
+            for (var i = 0; i < neighbors.Count; i++)
             {
-                fleeVector -= toOther.Normalized() * _config.Species.BaseSpeed;
-                sensedDanger = true;
+                var other = neighbors[i];
+                var toOther = neighborOffsets[i];
+                var groupsDiffer = agent.GroupId != UngroupedGroupId &&
+                                   other.GroupId != UngroupedGroupId &&
+                                   other.GroupId != agent.GroupId;
+                if (groupsDiffer && toOther.LengthSquared < 4f)
+                {
+                    fleeVector -= toOther.Normalized() * _config.Species.BaseSpeed;
+                    sensedDanger = true;
+                }
             }
-        }
 
         var dangerLevel = _environment.SampleDanger(agent.Position);
         if (dangerLevel > 0.1f)
@@ -225,7 +377,9 @@ namespace Terrarium.Sim
 
         var foodHere = _environment.SampleFood(agent.Position);
         var foodGradient = FoodGradient(agent.Position);
-        var pheromoneGradient = PheromoneGradient(agent.GroupId, agent.Position);
+        var pheromoneGradient = agent.GroupId == UngroupedGroupId
+            ? new Vec2(0, 0)
+            : PheromoneGradient(agent.GroupId, agent.Position);
         var dangerGradientAway = DangerGradient(agent.Position);
 
         var foodBias = foodGradient.LengthSquared > 1e-4f ? foodGradient.Normalized() : new Vec2(0, 0);
@@ -277,6 +431,11 @@ namespace Terrarium.Sim
 
     private Vec2 Alignment(Agent agent, IReadOnlyList<Agent> neighbors)
     {
+        if (agent.GroupId == UngroupedGroupId)
+        {
+            return new Vec2(0, 0);
+        }
+
         var accum = new Vec2(0, 0);
         var count = 0;
         foreach (var other in neighbors)
@@ -349,7 +508,8 @@ namespace Terrarium.Sim
         int neighborCount,
         ref int births,
         List<(Vec2 Position, float Amount)> foodEvents,
-        List<(Vec2 Position, int GroupId, float Amount)> pheromoneEvents)
+        List<(Vec2 Position, int GroupId, float Amount)> pheromoneEvents,
+        bool canCreateGroups)
     {
         var dt = _config.TimeStep;
         var speedCost = agent.Velocity.Length * 0.05f;
@@ -400,11 +560,16 @@ namespace Terrarium.Sim
             {
                 var childEnergy = agent.Energy * 0.5f;
                 agent.Energy -= childEnergy + _config.Species.BirthEnergyCost;
+                var childGroup = MutateGroup(agent.GroupId, canCreateGroups);
+                if (agent.GroupId == UngroupedGroupId && childGroup != UngroupedGroupId)
+                {
+                    agent.GroupId = childGroup;
+                }
                 var child = new Agent
                 {
                     Id = _nextId++,
                     Generation = agent.Generation + 1,
-                    GroupId = MutateGroup(agent.GroupId),
+                    GroupId = childGroup,
                     Position = agent.Position + _rng.NextUnitCircle() * 0.5f,
                     Velocity = agent.Velocity,
                     Energy = childEnergy,
@@ -415,7 +580,10 @@ namespace Terrarium.Sim
                 };
                 _birthQueue.Add(child);
                 births++;
-                pheromoneEvents.Add((agent.Position, agent.GroupId, _config.Environment.PheromoneDepositOnBirth));
+                if (childGroup != UngroupedGroupId)
+                {
+                    pheromoneEvents.Add((agent.Position, childGroup, _config.Environment.PheromoneDepositOnBirth));
+                }
             }
         }
 
@@ -438,9 +606,23 @@ namespace Terrarium.Sim
         }
     }
 
-    private int MutateGroup(int groupId)
+    private int MutateGroup(int groupId, bool canCreateGroups)
     {
-        if (_rng.NextFloat() < 0.05f)
+        if (!canCreateGroups)
+        {
+            return groupId;
+        }
+
+        if (groupId == UngroupedGroupId)
+        {
+            if (_rng.NextFloat() < _config.Feedback.GroupBirthSeedChance)
+            {
+                return _nextGroupId++;
+            }
+            return UngroupedGroupId;
+        }
+
+        if (_rng.NextFloat() < _config.Feedback.GroupMutationChance)
         {
             var delta = _rng.NextInt(3) - 1;
             return Math.Abs(groupId + delta) % 8;
@@ -519,7 +701,10 @@ namespace Terrarium.Sim
             var agent = _agents[i];
             energySum += agent.Energy;
             ageSum += agent.Age;
-            _groupScratch.Add(agent.GroupId);
+            if (agent.GroupId != UngroupedGroupId)
+            {
+                _groupScratch.Add(agent.GroupId);
+            }
         }
 
         var avgEnergy = population == 0 ? 0 : energySum / population;

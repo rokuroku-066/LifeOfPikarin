@@ -32,6 +32,69 @@ namespace Terrarium.SimTests
         }
 
         [Fact]
+        public void GroupsStartAtZeroAndFormAfterWarmup()
+        {
+            var config = new SimulationConfig
+            {
+                Seed = 2025,
+                TimeStep = 0.2f,
+                WorldSize = 12f,
+                CellSize = 1.5f,
+                InitialPopulation = 12,
+                MaxPopulation = 60,
+                Species = new SpeciesConfig
+                {
+                    BaseSpeed = 1.5f,
+                    MaxAcceleration = 4f,
+                    VisionRadius = 5f,
+                    WanderJitter = 0.2f,
+                    MetabolismPerSecond = 0.05f,
+                    BirthEnergyCost = 0.5f,
+                    ReproductionEnergyThreshold = 4f,
+                    AdultAge = 1.5f,
+                    InitialEnergyFractionOfThreshold = 1.1f
+                },
+                Environment = new EnvironmentConfig
+                {
+                    FoodPerCell = 12f,
+                    FoodRegenPerSecond = 3f,
+                    FoodConsumptionRate = 6f
+                },
+                Feedback = new FeedbackConfig
+                {
+                    GroupFormationWarmupSeconds = 1f,
+                    GroupFormationNeighborThreshold = 2,
+                    GroupFormationChance = 1f,
+                    GroupAdoptionNeighborThreshold = 2,
+                    GroupAdoptionChance = 0.5f,
+                    GroupSplitChance = 0f,
+                    GroupBirthSeedChance = 0.8f,
+                    GroupMutationChance = 0.2f,
+                    LocalDensitySoftCap = 8,
+                    DensityReproductionPenalty = 0.6f,
+                    StressDrainPerNeighbor = 0.05f,
+                    DiseaseProbabilityPerNeighbor = 0f,
+                    DensityReproductionSlope = 0.02f,
+                    BaseDeathProbabilityPerSecond = 0f,
+                    AgeDeathProbabilityPerSecond = 0f,
+                    DensityDeathProbabilityPerNeighborPerSecond = 0f
+                }
+            };
+
+            var world = new World(config);
+            var firstMetrics = world.Step(0);
+            Assert.Equal(0, firstMetrics.Groups);
+
+            for (var i = 1; i < 25; i++)
+            {
+                world.Step(i);
+            }
+
+            var lastMetrics = world.Metrics.Entries[world.Metrics.Entries.Count - 1];
+            Assert.True(lastMetrics.Groups > 0);
+        }
+
+        [Fact]
         public void SpatialGridLimitsNeighborScope()
         {
             var grid = new SpatialGrid(1f);
