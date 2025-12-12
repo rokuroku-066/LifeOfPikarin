@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from pygame.math import Vector2
 
@@ -31,6 +32,12 @@ def _clamp_length(vector: Vector2, max_length: float) -> Vector2:
     return vector.normalize() * max_length
 
 
+def _heading_from_velocity(vector: Vector2) -> float:
+    if vector.length_squared() < 1e-12:
+        return 0.0
+    return math.atan2(vector.y, vector.x)
+
+
 @dataclass
 class TickMetrics:
     tick: int
@@ -48,7 +55,23 @@ class TickMetrics:
 class Snapshot:
     tick: int
     metrics: TickMetrics
-    agents: List[Dict[str, float]]
+    agents: List[Dict[str, Any]]
+    world: "SnapshotWorld"
+    metadata: "SnapshotMetadata"
+
+
+@dataclass
+class SnapshotWorld:
+    size: float
+
+
+@dataclass
+class SnapshotMetadata:
+    world_size: float
+    sim_dt: float
+    tick_rate: float
+    seed: int
+    config_version: str
 
 
 class World:
@@ -141,6 +164,7 @@ class World:
             agent.position, agent.velocity = self._reflect(
                 new_position, agent.velocity, self._config.world_size
             )
+            self._update_heading(agent)
             agent.age += self._config.time_step
 
             births += self._apply_life_cycle(agent, len(self._neighbor_agents), can_form_groups)
@@ -158,22 +182,22 @@ class World:
         return metrics
 
     def snapshot(self, tick: int) -> Snapshot:
-        metrics = self._metrics[-1] if self._metrics else TickMetrics(tick, len(self._agents), 0, 0, 0.0, 0.0, 0, 0)
-        agents_payload = [
-            {
-                "id": agent.id,
-                "x": agent.position.x,
-                "y": agent.position.y,
-                "vx": agent.velocity.x,
-                "vy": agent.velocity.y,
-                "group": agent.group_id,
-                "energy": agent.energy,
-                "state": agent.state.value,
-            }
-            for agent in self._agents
-            if agent.alive
-        ]
-        return Snapshot(tick=tick, metrics=metrics, agents=agents_payload)
+        metrics = self._metrics[-1] if self._metrics else self._snapshot_metrics_from_state(tick)
+        agents_payload = [self._agent_snapshot(agent) for agent in self._agents if agent.alive]
+        metadata = SnapshotMetadata(
+            world_size=self._config.world_size,
+            sim_dt=self._config.time_step,
+            tick_rate=0.0 if self._config.time_step <= 0 else 1.0 / self._config.time_step,
+            seed=self._config.seed,
+            config_version=self._config.config_version,
+        )
+        return Snapshot(
+            tick=tick,
+            metrics=metrics,
+            agents=agents_payload,
+            world=SnapshotWorld(size=self._config.world_size),
+            metadata=metadata,
+        )
 
     def _bootstrap_population(self) -> None:
         for _ in range(self._config.initial_population):
@@ -181,12 +205,14 @@ class World:
                 self._rng.next_range(0.0, self._config.world_size),
                 self._rng.next_range(0.0, self._config.world_size),
             )
+            velocity = self._rng.next_unit_circle() * (self._config.species.base_speed * 0.3)
             agent = Agent(
                 id=self._next_id,
                 generation=0,
                 group_id=self._UNGROUPED,
                 position=pos,
-                velocity=self._rng.next_unit_circle() * (self._config.species.base_speed * 0.3),
+                velocity=velocity,
+                heading=self._heading_from_velocity(velocity),
                 energy=self._config.species.reproduction_energy_threshold * self._config.species.initial_energy_fraction_of_threshold,
                 age=self._sample_initial_age(),
                 state=AgentState.WANDER,
@@ -203,6 +229,42 @@ class World:
         if max_age < min_age:
             min_age, max_age = max_age, min_age
         return self._rng.next_range(min_age, max_age)
+
+    @staticmethod
+    def _heading_from_velocity(vector: Vector2) -> float:
+        return _heading_from_velocity(vector)
+
+    def _update_heading(self, agent: Agent) -> None:
+        if agent.velocity.length_squared() > 1e-8:
+            agent.heading = self._heading_from_velocity(agent.velocity)
+
+    def _compute_size(self, agent: Agent) -> float:
+        maturity = min(1.0, agent.age / max(1e-5, self._config.species.adult_age))
+        energy_factor = min(1.0, agent.energy / max(1e-5, self._config.species.reproduction_energy_threshold))
+        size = 0.4 + 0.4 * maturity + 0.2 * energy_factor
+        return max(0.1, min(1.0, size))
+
+    def _agent_snapshot(self, agent: Agent) -> Dict[str, float]:
+        speed = agent.velocity.length()
+        return {
+            "id": agent.id,
+            "x": agent.position.x,
+            "y": agent.position.y,
+            "vx": agent.velocity.x,
+            "vy": agent.velocity.y,
+            "group": agent.group_id,
+            "behavior_state": agent.state.value,
+            "phase": "end" if not agent.alive else "loop",
+            "age": agent.age,
+            "energy": agent.energy,
+            "size": self._compute_size(agent),
+            "is_alive": agent.alive,
+            "speed": speed,
+            "heading": agent.heading,
+            "species_id": 0,
+            "appearance_seed": agent.id,
+            "importance": 1.0,
+        }
 
     def _collect_neighbor_data(self, agent: Agent, neighbors: List[GridEntry]) -> None:
         self._neighbor_offsets.clear()
@@ -485,6 +547,7 @@ class World:
                     group_id=child_group,
                     position=agent.position + self._rng.next_unit_circle() * 0.5,
                     velocity=agent.velocity,
+                    heading=agent.heading,
                     energy=child_energy,
                     age=0.0,
                     state=AgentState.WANDER,
@@ -580,7 +643,7 @@ class World:
 
         return Vector2(x, y), Vector2(vx, vy)
 
-    def _create_metrics(self, tick: int, births: int, deaths: int, neighbor_checks: int, duration_ms: float) -> TickMetrics:
+    def _population_stats(self) -> tuple[int, float, float, int]:
         population = len(self._agents)
         energy_sum = sum(agent.energy for agent in self._agents)
         age_sum = sum(agent.age for agent in self._agents)
@@ -590,6 +653,12 @@ class World:
                 self._group_scratch.add(agent.group_id)
         avg_energy = 0.0 if population == 0 else energy_sum / population
         avg_age = 0.0 if population == 0 else age_sum / population
+        groups = len(self._group_scratch)
+        self._group_scratch.clear()
+        return population, avg_energy, avg_age, groups
+
+    def _create_metrics(self, tick: int, births: int, deaths: int, neighbor_checks: int, duration_ms: float) -> TickMetrics:
+        population, avg_energy, avg_age, groups = self._population_stats()
         return TickMetrics(
             tick=tick,
             population=population,
@@ -597,9 +666,23 @@ class World:
             deaths=deaths,
             average_energy=avg_energy,
             average_age=avg_age,
-            groups=len(self._group_scratch),
+            groups=groups,
             neighbor_checks=neighbor_checks,
             tick_duration_ms=duration_ms,
+        )
+
+    def _snapshot_metrics_from_state(self, tick: int) -> TickMetrics:
+        population, avg_energy, avg_age, groups = self._population_stats()
+        return TickMetrics(
+            tick=tick,
+            population=population,
+            births=0,
+            deaths=0,
+            average_energy=avg_energy,
+            average_age=avg_age,
+            groups=groups,
+            neighbor_checks=0,
+            tick_duration_ms=0.0,
         )
 
     def _try_get_agent(self, agent_id: int) -> Optional[Agent]:

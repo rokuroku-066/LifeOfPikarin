@@ -89,6 +89,7 @@ class SimulationConfig:
     world_size: float = 100.0
     cell_size: float = 2.5
     seed: int = 1337
+    config_version: str = "v1"
     species: SpeciesConfig = field(default_factory=SpeciesConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
