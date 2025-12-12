@@ -161,6 +161,8 @@ class World:
                 "id": agent.id,
                 "x": agent.position.x,
                 "y": agent.position.y,
+                "vx": agent.velocity.x,
+                "vy": agent.velocity.y,
                 "group": agent.group_id,
                 "energy": agent.energy,
                 "state": agent.state.value,

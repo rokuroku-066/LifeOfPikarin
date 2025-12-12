@@ -15,7 +15,7 @@ from .world import World
 
 
 class SimulationController:
-    def __init__(self, config: SimulationConfig, broadcast_interval: int = 2):
+    def __init__(self, config: SimulationConfig, broadcast_interval: int = 1):
         self.config = config
         self.world = World(config)
         self.broadcast_interval = max(1, broadcast_interval)
