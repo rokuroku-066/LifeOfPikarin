@@ -1,5 +1,6 @@
 import * as THREE from 'https://unpkg.com/three@0.164.1/build/three.module.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.164.1/examples/jsm/controls/OrbitControls.js';
+import { computeGroupHue } from './color.js';
 
 const container = document.getElementById('view-container');
 const tickSpan = document.getElementById('tick');
@@ -162,7 +163,7 @@ function updateView() {
 }
 
 function groupColor(id) {
-  const hue = (id * 47) % 360;
+  const hue = computeGroupHue(id);
   return new THREE.Color(`hsl(${hue}, 70%, 60%)`);
 }
 
