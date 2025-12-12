@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from terrarium.config import SimulationConfig
+from terrarium.config import FeedbackConfig, SimulationConfig
 from terrarium.world import World
 
 
@@ -28,3 +28,22 @@ def test_population_bounds_respected():
     for tick in range(200):
         world.step(tick)
         assert len(world.agents) <= config.max_population
+
+
+def test_disease_death_returns_zero_births():
+    config = SimulationConfig(
+        seed=99,
+        initial_population=1,
+        feedback=FeedbackConfig(
+            local_density_soft_cap=0,
+            disease_probability_per_neighbor=1.0,
+        ),
+    )
+    world = World(config)
+    agent = world.agents[0]
+
+    births = world._apply_life_cycle(agent, neighbor_count=100, can_create_groups=False)
+
+    assert births == 0
+    assert not agent.alive
+    assert world._pending_food  # type: ignore[attr-defined]

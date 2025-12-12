@@ -381,7 +381,7 @@ class World:
             if self._rng.next_float() < neighbor_count * self._config.feedback.disease_probability_per_neighbor * dt:
                 agent.alive = False
                 self._pending_food.append((agent.position, self._config.environment.food_from_death))
-                return
+                return births_added
         else:
             agent.stress = max(0.0, agent.stress - 0.05 * dt)
 
