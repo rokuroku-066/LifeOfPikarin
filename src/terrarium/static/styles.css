@@ -1,3 +1,7 @@
+:root {
+  --header-height: 0px;
+}
+
 body {
   font-family: 'Segoe UI', sans-serif;
   background: #0d0d0d;
@@ -5,12 +9,11 @@ body {
   margin: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  min-height: 100vh;
 }
 
 header {
   width: 100%;
-  max-width: 900px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -41,14 +44,16 @@ button:hover {
 main {
   width: 100%;
   display: flex;
-  justify-content: center;
   padding: 12px;
   box-sizing: border-box;
+  flex: 1 1 auto;
+  height: calc(100vh - var(--header-height));
+  min-height: 0;
 }
 
 #view-container {
-  width: min(90vw, 960px);
-  aspect-ratio: 1 / 1;
+  width: 100%;
+  height: 100%;
   background: #0a0a0a;
   border: 1px solid #333;
   border-radius: 6px;
