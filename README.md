@@ -116,8 +116,9 @@ uvicorn terrarium.server:app --reload --port 8000
 
 ### Three.js ビューアについて
 
-- Web UI は CDN から提供される ES Module 版 Three.js (`https://unpkg.com/three@0.164.1/...`) を読み込み、`OrbitControls` でパン・ズームできます（回転は無効化）。
-- レンダラはオーソグラフィックビューでワールドの中心にカメラを置き、スナップショットを `InstancedMesh` の行列と色に反映します。
+- Web UI は CDN から提供される ES Module 版 Three.js (`https://unpkg.com/three@0.164.1/...`) を読み込みます。右上の斜めカメラは `OrbitControls` でパン / ズーム / 回転できます（Sim には一切書き込まない）。
+- 画面は 3 分割です: 左 = 真上オーソグラフィック、右上 = フィールド端からのパース付き斜めビュー、右下 = ランダムに選ばれた個体の POV（個体が消滅したら自動で別個体に切替）。
+- 単一の `InstancedMesh` を共有し、scissor viewport で 3 つのカメラをレンダリングします。スナップショットの行列と色のみを更新するため View 側で O(N²) にはなりません。
 - ウィンドウリサイズ時に投影行列とキャンバスサイズが更新されます。ネットワークが無い場合は Three.js モジュールをローカルに配置し、`src/terrarium/static/app.js` のインポート先を差し替えてください。
 
 ### テスト
