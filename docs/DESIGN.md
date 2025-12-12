@@ -1,6 +1,6 @@
 # 🎯 全体コンセプトと設計方針
 
-* Python 実装（`src/python/terrarium`）は決定論的な Simulation Core と、スナップショットを配信する Web サーバーで構成される。クライアントは状態を読み取るだけで書き込まない。
+* Python 実装（`src/terrarium`）は決定論的な Simulation Core と、スナップショットを配信する Web サーバーで構成される。クライアントは状態を読み取るだけで書き込まない。
 
 ## 目的
 

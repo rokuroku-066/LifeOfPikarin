@@ -53,7 +53,7 @@ Codex: Read this file before doing any work and follow it as default working agr
   - If a plan needs context from the design, restate the necessary parts in the plan (do not assume the reader remembers the design doc).
 
 Recommended (but not mandatory) code layout:
-- `src/python/` : simulation core, FastAPI server, and static web viewer assets (Python-only)
+- `src/terrarium/` : simulation core, FastAPI server, and static web viewer assets (Python-only)
 - `docs/` : design + notes
 - `.agent/PLANS.md` : ExecPlan authoring rules (see below)
 
