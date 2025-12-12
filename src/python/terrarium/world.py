@@ -286,21 +286,21 @@ class World:
         flee_vector = ZERO
         sensed_danger = False
 
+        danger_level = self._environment.sample_danger(agent.position)
+        if danger_level > 0.1:
+            sensed_danger = True
+            danger_gradient = self._danger_gradient(agent.position)
+            if danger_gradient.length_squared() < 1e-4:
+                danger_gradient = self._rng.next_unit_circle()
+            flee_vector = flee_vector - _safe_normalize(danger_gradient) * (
+                self._config.species.base_speed * min(1.0, danger_level)
+            )
+
         for other, offset in zip(neighbors, neighbor_offsets):
             groups_differ = agent.group_id != self._UNGROUPED and other.group_id != self._UNGROUPED and other.group_id != agent.group_id
             if groups_differ and offset.length_squared() < 4.0:
                 flee_vector = flee_vector - _safe_normalize(offset) * self._config.species.base_speed
                 sensed_danger = True
-
-            danger_level = self._environment.sample_danger(agent.position)
-            if danger_level > 0.1:
-                sensed_danger = True
-                danger_gradient = self._danger_gradient(agent.position)
-                if danger_gradient.length_squared() < 1e-4:
-                    danger_gradient = self._rng.next_unit_circle()
-                flee_vector = flee_vector - _safe_normalize(danger_gradient) * (
-                    self._config.species.base_speed * min(1.0, danger_level)
-                )
 
         if flee_vector.length_squared() > 1e-3:
             agent.state = AgentState.FLEE
