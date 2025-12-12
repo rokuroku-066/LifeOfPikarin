@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pygame.math import Vector2
+from pytest import approx
 
 from terrarium.agent import Agent, AgentState
 from terrarium.config import FeedbackConfig, SimulationConfig, SpeciesConfig
@@ -164,6 +165,79 @@ def test_close_allies_reset_lonely_timer():
 
     assert world.agents[0].group_id == 2
     assert world.agents[0].group_lonely_seconds == 0.0
+
+
+def _make_reflective_config(base_speed: float = 50.0) -> SimulationConfig:
+    return SimulationConfig(
+        time_step=1.0,
+        world_size=10.0,
+        initial_population=0,
+        species=SpeciesConfig(
+            base_speed=base_speed,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+        ),
+    )
+
+
+def test_reflective_boundary_flips_velocity_and_position():
+    config = _make_reflective_config(base_speed=10.0)
+    world = World(config)
+    world.agents.append(
+        Agent(
+            id=0,
+            generation=0,
+            group_id=-1,
+            position=Vector2(9.5, 5.0),
+            velocity=Vector2(2.0, 0.0),
+            energy=10.0,
+            age=1.0,
+            state=AgentState.WANDER,
+        )
+    )
+    world._next_id = 1
+    world._refresh_index_map()
+
+    world.step(0)
+
+    agent = world.agents[0]
+    assert 0.0 <= agent.position.x <= config.world_size
+    assert 0.0 <= agent.position.y <= config.world_size
+    assert agent.position.x == approx(8.5)
+    assert agent.position.y == approx(5.0)
+    assert agent.velocity.x == approx(-2.0)
+    assert agent.velocity.y == approx(0.0)
+
+
+def test_reflective_boundary_handles_multiple_crossings_in_one_tick():
+    config = _make_reflective_config()
+    world = World(config)
+    world.agents.append(
+        Agent(
+            id=5,
+            generation=0,
+            group_id=-1,
+            position=Vector2(5.0, 5.0),
+            velocity=Vector2(35.0, -35.0),
+            energy=10.0,
+            age=1.0,
+            state=AgentState.WANDER,
+        )
+    )
+    world._next_id = 6
+    world._refresh_index_map()
+
+    world.step(0)
+
+    agent = world.agents[0]
+    assert 0.0 <= agent.position.x <= config.world_size
+    assert 0.0 <= agent.position.y <= config.world_size
+    assert agent.position.x == approx(0.0)
+    assert agent.position.y == approx(10.0)
+    assert agent.velocity.x == approx(-35.0)
+    assert agent.velocity.y == approx(35.0)
 
 
 def test_detach_radius_separate_from_cohesion():

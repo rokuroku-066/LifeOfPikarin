@@ -137,7 +137,10 @@ class World:
                 agent.velocity + accel * self._config.time_step,
                 self._config.species.base_speed,
             )
-            agent.position = self._wrap(agent.position + agent.velocity * self._config.time_step, self._config.world_size)
+            new_position = agent.position + agent.velocity * self._config.time_step
+            agent.position, agent.velocity = self._reflect(
+                new_position, agent.velocity, self._config.world_size
+            )
             agent.age += self._config.time_step
 
             births += self._apply_life_cycle(agent, len(self._neighbor_agents), can_form_groups)
@@ -550,17 +553,32 @@ class World:
         return deaths
 
     @staticmethod
-    def _wrap(position: Vector2, world_size: float) -> Vector2:
+    def _reflect(position: Vector2, velocity: Vector2, world_size: float) -> tuple[Vector2, Vector2]:
         x, y = position.x, position.y
-        if x < 0:
-            x += world_size
-        if x > world_size:
-            x -= world_size
-        if y < 0:
-            y += world_size
-        if y > world_size:
-            y -= world_size
-        return Vector2(x, y)
+        vx, vy = velocity.x, velocity.y
+
+        while True:
+            crossed = False
+            if x < 0:
+                x = -x
+                vx = -vx
+                crossed = True
+            if x > world_size:
+                x = 2 * world_size - x
+                vx = -vx
+                crossed = True
+            if y < 0:
+                y = -y
+                vy = -vy
+                crossed = True
+            if y > world_size:
+                y = 2 * world_size - y
+                vy = -vy
+                crossed = True
+            if not crossed:
+                break
+
+        return Vector2(x, y), Vector2(vx, vy)
 
     def _create_metrics(self, tick: int, births: int, deaths: int, neighbor_checks: int, duration_ms: float) -> TickMetrics:
         population = len(self._agents)
