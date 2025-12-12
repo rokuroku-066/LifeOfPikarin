@@ -160,6 +160,7 @@ speedSlider.addEventListener('input', () => {
 function ensureInstancedAgents(count) {
   if (instancedAgents && instancedAgents.count >= count) {
     instancedAgents.count = count;
+    ensureInstanceColor(instancedAgents, count);
     return instancedAgents;
   }
 
@@ -182,7 +183,23 @@ function ensureInstancedAgents(count) {
   instancedAgents.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   instancedAgents.castShadow = true;
   scene.add(instancedAgents);
+  ensureInstanceColor(instancedAgents, count);
   return instancedAgents;
+}
+
+function ensureInstanceColor(mesh, count) {
+  const existing = mesh.instanceColor;
+  if (existing && existing.count >= count) {
+    mesh.geometry.setAttribute('color', existing);
+    return existing;
+  }
+
+  const colorAttr = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+  colorAttr.setUsage(THREE.DynamicDrawUsage);
+  mesh.instanceColor = colorAttr;
+  mesh.geometry.setAttribute('color', colorAttr);
+  mesh.material.needsUpdate = true;
+  return colorAttr;
 }
 
 function updateView(now) {
@@ -203,6 +220,8 @@ function updateView(now) {
   const mesh = ensureInstancedAgents(nextSnapshot.agents.length);
   if (!mesh) return;
   mesh.count = nextSnapshot.agents.length;
+  const colorAttr = ensureInstanceColor(mesh, mesh.count);
+  const colors = colorAttr.array;
 
   for (let i = 0; i < nextSnapshot.agents.length; i += 1) {
     const agent = nextSnapshot.agents[i];
@@ -217,13 +236,16 @@ function updateView(now) {
     dummy.rotation.set(0, yaw, 0);
     dummy.updateMatrix();
     mesh.setMatrixAt(i, dummy.matrix);
-    mesh.setColorAt(i, groupColor(agent.group));
+
+    const color = groupColor(agent.group);
+    const base = i * 3;
+    colors[base] = color.r;
+    colors[base + 1] = color.g;
+    colors[base + 2] = color.b;
   }
 
   mesh.instanceMatrix.needsUpdate = true;
-  if (mesh.instanceColor) {
-    mesh.instanceColor.needsUpdate = true;
-  }
+  colorAttr.needsUpdate = true;
 }
 
 function groupColor(id) {
