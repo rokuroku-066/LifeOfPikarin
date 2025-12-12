@@ -221,7 +221,7 @@ class World:
         self._ungrouped_neighbors.clear()
         same_group_neighbors = 0
         same_group_close_neighbors = 0
-        cohesion_radius_sq = self._config.feedback.group_cohesion_radius * self._config.feedback.group_cohesion_radius
+        detach_radius_sq = self._config.feedback.group_detach_radius * self._config.feedback.group_detach_radius
         close_threshold = self._config.feedback.group_detach_close_neighbor_threshold
 
         for other, offset in zip(neighbors, neighbor_offsets):
@@ -229,7 +229,7 @@ class World:
                 self._ungrouped_neighbors.append(other)
             if agent.group_id != self._UNGROUPED and other.group_id == agent.group_id:
                 same_group_neighbors += 1
-                if offset.length_squared() <= cohesion_radius_sq:
+                if offset.length_squared() <= detach_radius_sq:
                     same_group_close_neighbors += 1
             if other.group_id >= 0:
                 self._group_counts_scratch[other.group_id] = self._group_counts_scratch.get(other.group_id, 0) + 1
@@ -353,20 +353,20 @@ class World:
             desired = desired + self._rng.next_unit_circle() * (self._config.species.base_speed * self._config.species.wander_jitter)
             desired = desired + pheromone_bias * (self._config.species.base_speed * 0.15)
 
-        desired = desired + self._separation(neighbor_offsets) * (self._config.species.base_speed * 1.2)
+        desired = desired + self._separation(agent, neighbors, neighbor_offsets) * (self._config.species.base_speed * 1.2)
         desired = desired + self._alignment(agent, neighbors) * (self._config.species.base_speed * 0.3)
         desired = desired + group_cohesion_bias * (self._config.species.base_speed * self._config.feedback.group_cohesion_weight)
         desired = desired - danger_bias * (self._config.species.base_speed * 0.2)
         return desired, sensed_danger
 
-    @staticmethod
-    def _separation(neighbor_vectors: List[Vector2]) -> Vector2:
+    def _separation(self, agent: Agent, neighbors: List[Agent], neighbor_vectors: List[Vector2]) -> Vector2:
         if not neighbor_vectors:
             return ZERO
         accum = ZERO
-        for offset in neighbor_vectors:
+        for other, offset in zip(neighbors, neighbor_vectors):
             dist_sq = max(offset.length_squared(), 0.1)
-            accum = accum - (offset / dist_sq)
+            weight = 0.5 if agent.group_id != self._UNGROUPED and other.group_id == agent.group_id else 1.0
+            accum = accum - (offset / dist_sq) * weight
         return _safe_normalize(accum)
 
     def _alignment(self, agent: Agent, neighbors: List[Agent]) -> Vector2:

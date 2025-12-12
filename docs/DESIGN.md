@@ -369,6 +369,7 @@ Guideless ALife モデルのように、事前の適応度関数を決めず、�
 
 5. **グループ維持と離脱のヒステリシス**
    * 近傍セル内で集めた同グループのうち、`group_cohesion_radius` 未満の距離にいる近距離仲間数を数える。
+   * 離脱判定には `group_detach_radius` を使い、Cohesion の射程と孤立判定の射程を分けてヒステリシスを持たせる。
    * 近距離仲間数が `group_detach_close_neighbor_threshold` 未満の状態が `group_detach_after_seconds` 続くと、所属を弱める。
      * まず近傍の多数派グループへ `group_switch_chance` の確率で再所属。
      * 多数派が無い／確率を外した場合は未所属（_UNGROUPED）に戻る。
@@ -378,7 +379,9 @@ Guideless ALife モデルのように、事前の適応度関数を決めず、�
 
    **主要パラメータ（FeedbackConfig）**
 
-   * `group_cohesion_radius`: Cohesion や孤立判定に使う「仲間とみなす距離」(default: 3.0)。
+   * `group_cohesion_radius`: Cohesion ベクトルを計算する「仲間とみなす距離」(default: 6.0)。
+   * `group_detach_radius`: 孤立判定に使う近距離仲間の距離 (default: 6.0)。
+   * 同グループ同士の Separation は弱めにし、分散しすぎないようにする。
    * `group_detach_close_neighbor_threshold`: この人数未満が続くと孤立扱いする近距離仲間数 (default: 1)。
    * `group_detach_after_seconds`: 孤立がこの秒数続いたら所属を弱める (default: 5.0)。
    * `group_switch_chance`: 離脱時に近傍多数派へ乗り換える確率 (default: 0.2)。
