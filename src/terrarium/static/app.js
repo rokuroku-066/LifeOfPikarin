@@ -230,7 +230,8 @@ function groupColor(id) {
   const cached = colorCache.get(id);
   if (cached) return cached;
   const hue = computeGroupHue(id);
-  const color = new THREE.Color(`hsl(${hue}, 70%, 60%)`);
+  const color = new THREE.Color();
+  color.setHSL(hue / 360, 0.7, 0.6);
   colorCache.set(id, color);
   return color;
 }
