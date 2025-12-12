@@ -164,3 +164,56 @@ def test_close_allies_reset_lonely_timer():
 
     assert world.agents[0].group_id == 2
     assert world.agents[0].group_lonely_seconds == 0.0
+
+
+def test_detach_radius_separate_from_cohesion():
+    config = SimulationConfig(
+        seed=21,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(base_speed=0.0, max_acceleration=0.0, metabolism_per_second=0.0, vision_radius=4.0),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=2.0,
+            group_detach_radius=4.0,
+            group_detach_close_neighbor_threshold=1,
+            group_detach_after_seconds=1.0,
+            group_switch_chance=0.0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=20,
+                generation=0,
+                group_id=3,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=21,
+                generation=0,
+                group_id=3,
+                position=Vector2(3.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 22
+    world._refresh_index_map()
+
+    world.step(0)
+    world.step(1)
+
+    assert world.agents[0].group_id == 3
+    assert world.agents[0].group_lonely_seconds == 0.0

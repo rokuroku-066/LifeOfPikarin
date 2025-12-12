@@ -73,7 +73,8 @@ class FeedbackConfig:
     group_split_stress_threshold: float = 0.4
     group_birth_seed_chance: float = 0.35
     group_mutation_chance: float = 0.05
-    group_cohesion_radius: float = 3.0
+    group_cohesion_radius: float = 6.0
+    group_detach_radius: float = 6.0
     group_detach_close_neighbor_threshold: int = 1
     group_detach_after_seconds: float = 5.0
     group_switch_chance: float = 0.2
