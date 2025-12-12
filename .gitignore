@@ -1,3 +1,48 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Packaging / wheels
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+pip-wheel/
+
+# Testing / coverage / lint
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.mypy_cache/
+.pytype/
+.pyre/
+.ruff_cache/
+.dmypy.json
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# Pip logs
+pip-log.txt
+pip-delete-this-directory.txt
+
 # Unity-generated folders and caches
 [Ll]ibrary/
 [Tt]emp/
