@@ -26,3 +26,4 @@ class Agent:
     state: AgentState
     alive: bool = True
     stress: float = 0.0
+    group_lonely_seconds: float = 0.0

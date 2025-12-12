@@ -129,7 +129,7 @@ class World:
             self._collect_neighbor_data(agent, neighbors)
             neighbor_checks += len(self._neighbor_agents)
 
-            self._update_group_membership(agent, self._neighbor_agents, can_form_groups)
+            self._update_group_membership(agent, self._neighbor_agents, self._neighbor_offsets, can_form_groups)
             desired, sensed_danger = self._compute_desired_velocity(agent, self._neighbor_agents, self._neighbor_offsets)
             accel = desired - agent.velocity
             accel = _clamp_length(accel, self._config.species.max_acceleration)
@@ -213,17 +213,24 @@ class World:
             self._neighbor_offsets.append(entry.position - agent.position)
             self._neighbor_agents.append(other)
 
-    def _update_group_membership(self, agent: Agent, neighbors: List[Agent], can_form_groups: bool) -> None:
+    def _update_group_membership(
+        self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2], can_form_groups: bool
+    ) -> None:
         original_group = agent.group_id
         self._group_counts_scratch.clear()
         self._ungrouped_neighbors.clear()
         same_group_neighbors = 0
+        same_group_close_neighbors = 0
+        cohesion_radius_sq = self._config.feedback.group_cohesion_radius * self._config.feedback.group_cohesion_radius
+        close_threshold = self._config.feedback.group_detach_close_neighbor_threshold
 
-        for other in neighbors:
+        for other, offset in zip(neighbors, neighbor_offsets):
             if other.group_id == self._UNGROUPED:
                 self._ungrouped_neighbors.append(other)
             if agent.group_id != self._UNGROUPED and other.group_id == agent.group_id:
                 same_group_neighbors += 1
+                if offset.length_squared() <= cohesion_radius_sq:
+                    same_group_close_neighbors += 1
             if other.group_id >= 0:
                 self._group_counts_scratch[other.group_id] = self._group_counts_scratch.get(other.group_id, 0) + 1
 
@@ -234,11 +241,26 @@ class World:
                 majority_group = gid
                 majority_count = count
 
+        if agent.group_id == self._UNGROUPED:
+            agent.group_lonely_seconds = 0.0
+        else:
+            if same_group_close_neighbors >= close_threshold:
+                agent.group_lonely_seconds = 0.0
+            else:
+                agent.group_lonely_seconds += self._config.time_step
+            if agent.group_lonely_seconds >= self._config.feedback.group_detach_after_seconds:
+                if majority_group != self._UNGROUPED and self._rng.next_float() < self._config.feedback.group_switch_chance:
+                    agent.group_id = majority_group
+                else:
+                    agent.group_id = self._UNGROUPED
+                agent.group_lonely_seconds = 0.0
+
         if can_form_groups:
             self._try_form_group(agent)
             if agent.group_id == original_group:
                 self._try_adopt_group(agent, majority_group, majority_count)
-        self._try_split_group(agent, same_group_neighbors, can_form_groups)
+        if agent.group_id == original_group:
+            self._try_split_group(agent, same_group_neighbors, can_form_groups)
         self._group_counts_scratch.clear()
         self._ungrouped_neighbors.clear()
 
@@ -312,6 +334,7 @@ class World:
         food_gradient = self._food_gradient(agent.position)
         pheromone_gradient = ZERO if agent.group_id == self._UNGROUPED else self._pheromone_gradient(agent.group_id, agent.position)
         danger_gradient_away = self._danger_gradient(agent.position)
+        group_cohesion_bias = self._group_cohesion(agent, neighbors, neighbor_offsets)
 
         food_bias = _safe_normalize(food_gradient) if food_gradient.length_squared() > 1e-4 else ZERO
         pheromone_bias = _safe_normalize(pheromone_gradient) if pheromone_gradient.length_squared() > 1e-4 else ZERO
@@ -332,6 +355,7 @@ class World:
 
         desired = desired + self._separation(neighbor_offsets) * (self._config.species.base_speed * 1.2)
         desired = desired + self._alignment(agent, neighbors) * (self._config.species.base_speed * 0.3)
+        desired = desired + group_cohesion_bias * (self._config.species.base_speed * self._config.feedback.group_cohesion_weight)
         desired = desired - danger_bias * (self._config.species.base_speed * 0.2)
         return desired, sensed_danger
 
@@ -354,6 +378,23 @@ class World:
             if other.group_id != agent.group_id:
                 continue
             accum = accum + other.velocity
+            count += 1
+        if count == 0:
+            return ZERO
+        return _safe_normalize(accum / count)
+
+    def _group_cohesion(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> Vector2:
+        if agent.group_id == self._UNGROUPED:
+            return ZERO
+        cohesion_radius_sq = self._config.feedback.group_cohesion_radius * self._config.feedback.group_cohesion_radius
+        accum = ZERO
+        count = 0
+        for other, offset in zip(neighbors, neighbor_offsets):
+            if other.group_id != agent.group_id:
+                continue
+            if offset.length_squared() > cohesion_radius_sq:
+                continue
+            accum = accum + offset
             count += 1
         if count == 0:
             return ZERO

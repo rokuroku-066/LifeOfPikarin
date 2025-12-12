@@ -367,6 +367,23 @@ Guideless ALife モデルのように、事前の適応度関数を決めず、�
        などのペナルティをかける。
    * これにより一部は他の資源パッチへ移住し、世界全体で**複数のコロニーが共存**しやすくなる。
 
+5. **グループ維持と離脱のヒステリシス**
+   * 近傍セル内で集めた同グループのうち、`group_cohesion_radius` 未満の距離にいる近距離仲間数を数える。
+   * 近距離仲間数が `group_detach_close_neighbor_threshold` 未満の状態が `group_detach_after_seconds` 続くと、所属を弱める。
+     * まず近傍の多数派グループへ `group_switch_chance` の確率で再所属。
+     * 多数派が無い／確率を外した場合は未所属（_UNGROUPED）に戻る。
+   * 近距離に味方が戻ればカウンターは即座に 0 へリセットされ、1〜2tickのバラつきで揺れない。
+   * Steering 側では同グループ・近距離の平均位置へ Cohesion ベクトルを追加し（重み `group_cohesion_weight`）、密集しやすさを上げる。
+   * これらはすべて近傍セル内のデータだけで計算され、O(N²) を避けつつ Phase1 の「複数コロニーが自然に分かれる」誘導と整合する。
+
+   **主要パラメータ（FeedbackConfig）**
+
+   * `group_cohesion_radius`: Cohesion や孤立判定に使う「仲間とみなす距離」(default: 3.0)。
+   * `group_detach_close_neighbor_threshold`: この人数未満が続くと孤立扱いする近距離仲間数 (default: 1)。
+   * `group_detach_after_seconds`: 孤立がこの秒数続いたら所属を弱める (default: 5.0)。
+   * `group_switch_chance`: 離脱時に近傍多数派へ乗り換える確率 (default: 0.2)。
+   * `group_cohesion_weight`: 速度計算における同グループ Cohesion ベクトルの重み (default: 0.6)。
+
 ---
 
 # 5. View 設計：キューブ → FBX へのスムーズな移行

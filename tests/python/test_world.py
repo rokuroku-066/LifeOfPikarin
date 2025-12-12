@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from terrarium.config import FeedbackConfig, SimulationConfig
+from pygame.math import Vector2
+
+from terrarium.agent import Agent, AgentState
+from terrarium.config import FeedbackConfig, SimulationConfig, SpeciesConfig
 from terrarium.world import World
 
 
@@ -47,3 +50,117 @@ def test_disease_death_returns_zero_births():
     assert births == 0
     assert not agent.alive
     assert world._pending_food  # type: ignore[attr-defined]
+
+
+def test_lonely_agent_switches_to_nearby_majority():
+    config = SimulationConfig(
+        seed=5,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(base_speed=0.0, max_acceleration=0.0, metabolism_per_second=0.0, vision_radius=3.0),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=1.0,
+            group_detach_close_neighbor_threshold=1,
+            group_detach_after_seconds=2.0,
+            group_switch_chance=1.0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=0,
+                generation=0,
+                group_id=0,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=1,
+                generation=0,
+                group_id=1,
+                position=Vector2(0.5, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=2,
+                generation=0,
+                group_id=1,
+                position=Vector2(1.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 3
+    world._refresh_index_map()
+
+    for tick in range(3):
+        world.step(tick)
+
+    assert world.agents[0].group_id == 1
+    assert world.agents[0].group_lonely_seconds == 0.0
+
+
+def test_close_allies_reset_lonely_timer():
+    config = SimulationConfig(
+        seed=11,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(base_speed=0.0, max_acceleration=0.0, metabolism_per_second=0.0, vision_radius=3.0),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=1.0,
+            group_detach_close_neighbor_threshold=1,
+            group_detach_after_seconds=2.0,
+            group_switch_chance=0.0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=10,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+                group_lonely_seconds=1.5,
+            ),
+            Agent(
+                id=11,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.3, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 12
+    world._refresh_index_map()
+
+    world.step(0)
+
+    assert world.agents[0].group_id == 2
+    assert world.agents[0].group_lonely_seconds == 0.0
