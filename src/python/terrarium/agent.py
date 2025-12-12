@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from .vector import Vec2
+from pygame.math import Vector2
 
 
 class AgentState(str, Enum):
@@ -19,8 +19,8 @@ class Agent:
     id: int
     generation: int
     group_id: int
-    position: Vec2
-    velocity: Vec2
+    position: Vector2
+    velocity: Vector2
     energy: float
     age: float
     state: AgentState
