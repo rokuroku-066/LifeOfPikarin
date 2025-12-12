@@ -3,12 +3,32 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
+from pygame.math import Vector2
+
 from .agent import Agent, AgentState
 from .config import SimulationConfig
 from .environment import EnvironmentGrid
 from .rng import DeterministicRng
 from .spatial_grid import GridEntry, SpatialGrid
-from .vector import Vec2, ZERO
+
+ZERO = Vector2()
+
+
+def _safe_normalize(vector: Vector2) -> Vector2:
+    if vector.length_squared() < 1e-10:
+        return Vector2()
+    return vector.normalize()
+
+
+def _clamp_length(vector: Vector2, max_length: float) -> Vector2:
+    if max_length <= 0:
+        return Vector2()
+    magnitude_sq = vector.length_squared()
+    if magnitude_sq <= max_length * max_length:
+        return vector
+    if magnitude_sq == 0:
+        return Vector2()
+    return vector.normalize() * max_length
 
 
 @dataclass
@@ -42,12 +62,12 @@ class World:
         self._agents: List[Agent] = []
         self._birth_queue: List[Agent] = []
         self._id_to_index: Dict[int, int] = {}
-        self._neighbor_offsets: List[Vec2] = []
+        self._neighbor_offsets: List[Vector2] = []
         self._neighbor_agents: List[Agent] = []
         self._group_scratch: Set[int] = set()
-        self._pending_food: List[tuple[Vec2, float]] = []
-        self._pending_danger: List[tuple[Vec2, float]] = []
-        self._pending_pheromone: List[tuple[Vec2, int, float]] = []
+        self._pending_food: List[tuple[Vector2, float]] = []
+        self._pending_danger: List[tuple[Vector2, float]] = []
+        self._pending_pheromone: List[tuple[Vector2, int, float]] = []
         self._ungrouped_neighbors: List[Agent] = []
         self._group_counts_scratch: Dict[int, int] = {}
         self._next_id = 0
@@ -112,8 +132,11 @@ class World:
             self._update_group_membership(agent, self._neighbor_agents, can_form_groups)
             desired, sensed_danger = self._compute_desired_velocity(agent, self._neighbor_agents, self._neighbor_offsets)
             accel = desired - agent.velocity
-            accel = accel.clamp_length(self._config.species.max_acceleration)
-            agent.velocity = (agent.velocity + accel * self._config.time_step).clamp_length(self._config.species.base_speed)
+            accel = _clamp_length(accel, self._config.species.max_acceleration)
+            agent.velocity = _clamp_length(
+                agent.velocity + accel * self._config.time_step,
+                self._config.species.base_speed,
+            )
             agent.position = self._wrap(agent.position + agent.velocity * self._config.time_step, self._config.world_size)
             agent.age += self._config.time_step
 
@@ -149,7 +172,7 @@ class World:
 
     def _bootstrap_population(self) -> None:
         for _ in range(self._config.initial_population):
-            pos = Vec2(
+            pos = Vector2(
                 self._rng.next_range(0.0, self._config.world_size),
                 self._rng.next_range(0.0, self._config.world_size),
             )
@@ -258,16 +281,10 @@ class World:
     def _adopt_group(agent: Agent, group_id: int) -> None:
         agent.group_id = group_id
 
-    def _compute_desired_velocity(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vec2]) -> tuple[Vec2, bool]:
+    def _compute_desired_velocity(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> tuple[Vector2, bool]:
         desired = ZERO
         flee_vector = ZERO
         sensed_danger = False
-
-        for other, offset in zip(neighbors, neighbor_offsets):
-            groups_differ = agent.group_id != self._UNGROUPED and other.group_id != self._UNGROUPED and other.group_id != agent.group_id
-            if groups_differ and offset.length_squared() < 4.0:
-                flee_vector = flee_vector - offset.normalized() * self._config.species.base_speed
-                sensed_danger = True
 
         danger_level = self._environment.sample_danger(agent.position)
         if danger_level > 0.1:
@@ -275,7 +292,15 @@ class World:
             danger_gradient = self._danger_gradient(agent.position)
             if danger_gradient.length_squared() < 1e-4:
                 danger_gradient = self._rng.next_unit_circle()
-            flee_vector = flee_vector - danger_gradient.normalized() * (self._config.species.base_speed * min(1.0, danger_level))
+            flee_vector = flee_vector - _safe_normalize(danger_gradient) * (
+                self._config.species.base_speed * min(1.0, danger_level)
+            )
+
+        for other, offset in zip(neighbors, neighbor_offsets):
+            groups_differ = agent.group_id != self._UNGROUPED and other.group_id != self._UNGROUPED and other.group_id != agent.group_id
+            if groups_differ and offset.length_squared() < 4.0:
+                flee_vector = flee_vector - _safe_normalize(offset) * self._config.species.base_speed
+                sensed_danger = True
 
         if flee_vector.length_squared() > 1e-3:
             agent.state = AgentState.FLEE
@@ -286,9 +311,9 @@ class World:
         pheromone_gradient = ZERO if agent.group_id == self._UNGROUPED else self._pheromone_gradient(agent.group_id, agent.position)
         danger_gradient_away = self._danger_gradient(agent.position)
 
-        food_bias = food_gradient.normalized() if food_gradient.length_squared() > 1e-4 else ZERO
-        pheromone_bias = pheromone_gradient.normalized() if pheromone_gradient.length_squared() > 1e-4 else ZERO
-        danger_bias = danger_gradient_away.normalized() if danger_gradient_away.length_squared() > 1e-4 else ZERO
+        food_bias = _safe_normalize(food_gradient) if food_gradient.length_squared() > 1e-4 else ZERO
+        pheromone_bias = _safe_normalize(pheromone_gradient) if pheromone_gradient.length_squared() > 1e-4 else ZERO
+        danger_bias = _safe_normalize(danger_gradient_away) if danger_gradient_away.length_squared() > 1e-4 else ZERO
 
         if agent.energy < self._config.species.reproduction_energy_threshold * 0.6 or food_here > self._config.environment.food_per_cell * 0.5 or food_gradient.length_squared() > 0.01:
             agent.state = AgentState.SEEKING_FOOD
@@ -309,16 +334,16 @@ class World:
         return desired, sensed_danger
 
     @staticmethod
-    def _separation(neighbor_vectors: List[Vec2]) -> Vec2:
+    def _separation(neighbor_vectors: List[Vector2]) -> Vector2:
         if not neighbor_vectors:
             return ZERO
         accum = ZERO
         for offset in neighbor_vectors:
             dist_sq = max(offset.length_squared(), 0.1)
             accum = accum - (offset / dist_sq)
-        return accum.normalized()
+        return _safe_normalize(accum)
 
-    def _alignment(self, agent: Agent, neighbors: List[Agent]) -> Vec2:
+    def _alignment(self, agent: Agent, neighbors: List[Agent]) -> Vector2:
         if agent.group_id == self._UNGROUPED:
             return ZERO
         accum = ZERO
@@ -330,41 +355,41 @@ class World:
             count += 1
         if count == 0:
             return ZERO
-        return (accum / count).normalized()
+        return _safe_normalize(accum / count)
 
     @staticmethod
-    def _cohesion(neighbor_vectors: List[Vec2]) -> Vec2:
+    def _cohesion(neighbor_vectors: List[Vector2]) -> Vector2:
         if not neighbor_vectors:
             return ZERO
         center = ZERO
         for offset in neighbor_vectors:
             center = center + offset
         center = center / len(neighbor_vectors)
-        return center.normalized()
+        return _safe_normalize(center)
 
-    def _food_gradient(self, position: Vec2) -> Vec2:
+    def _food_gradient(self, position: Vector2) -> Vector2:
         step = self._config.cell_size
-        right = self._environment.peek_food(position + Vec2(step, 0))
-        left = self._environment.peek_food(position + Vec2(-step, 0))
-        up = self._environment.peek_food(position + Vec2(0, step))
-        down = self._environment.peek_food(position + Vec2(0, -step))
-        return Vec2(right - left, up - down)
+        right = self._environment.peek_food(position + Vector2(step, 0))
+        left = self._environment.peek_food(position + Vector2(-step, 0))
+        up = self._environment.peek_food(position + Vector2(0, step))
+        down = self._environment.peek_food(position + Vector2(0, -step))
+        return Vector2(right - left, up - down)
 
-    def _pheromone_gradient(self, group_id: int, position: Vec2) -> Vec2:
+    def _pheromone_gradient(self, group_id: int, position: Vector2) -> Vector2:
         step = self._config.cell_size
-        right = self._environment.sample_pheromone(position + Vec2(step, 0), group_id)
-        left = self._environment.sample_pheromone(position + Vec2(-step, 0), group_id)
-        up = self._environment.sample_pheromone(position + Vec2(0, step), group_id)
-        down = self._environment.sample_pheromone(position + Vec2(0, -step), group_id)
-        return Vec2(right - left, up - down)
+        right = self._environment.sample_pheromone(position + Vector2(step, 0), group_id)
+        left = self._environment.sample_pheromone(position + Vector2(-step, 0), group_id)
+        up = self._environment.sample_pheromone(position + Vector2(0, step), group_id)
+        down = self._environment.sample_pheromone(position + Vector2(0, -step), group_id)
+        return Vector2(right - left, up - down)
 
-    def _danger_gradient(self, position: Vec2) -> Vec2:
+    def _danger_gradient(self, position: Vector2) -> Vector2:
         step = self._config.cell_size
-        right = self._environment.sample_danger(position + Vec2(step, 0))
-        left = self._environment.sample_danger(position + Vec2(-step, 0))
-        up = self._environment.sample_danger(position + Vec2(0, step))
-        down = self._environment.sample_danger(position + Vec2(0, -step))
-        return Vec2(right - left, up - down)
+        right = self._environment.sample_danger(position + Vector2(step, 0))
+        left = self._environment.sample_danger(position + Vector2(-step, 0))
+        up = self._environment.sample_danger(position + Vector2(0, step))
+        down = self._environment.sample_danger(position + Vector2(0, -step))
+        return Vector2(right - left, up - down)
 
     def _apply_life_cycle(self, agent: Agent, neighbor_count: int, can_create_groups: bool) -> int:
         dt = self._config.time_step
@@ -482,7 +507,7 @@ class World:
         return deaths
 
     @staticmethod
-    def _wrap(position: Vec2, world_size: float) -> Vec2:
+    def _wrap(position: Vector2, world_size: float) -> Vector2:
         x, y = position.x, position.y
         if x < 0:
             x += world_size
@@ -492,7 +517,7 @@ class World:
             y += world_size
         if y > world_size:
             y -= world_size
-        return Vec2(x, y)
+        return Vector2(x, y)
 
     def _create_metrics(self, tick: int, births: int, deaths: int, neighbor_checks: int, duration_ms: float) -> TickMetrics:
         population = len(self._agents)

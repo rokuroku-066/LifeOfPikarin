@@ -4,8 +4,9 @@ import math
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Tuple
 
+from pygame.math import Vector2
+
 from .config import EnvironmentConfig, ResourcePatchConfig
-from .vector import Vec2
 
 
 @dataclass
@@ -47,22 +48,22 @@ class EnvironmentGrid:
         self._pheromone_buffer.clear()
         self._initialize_patches()
 
-    def sample_food(self, position: Vec2) -> float:
+    def sample_food(self, position: Vector2) -> float:
         key = self._cell_key(position)
         cell = self._get_or_create_food_cell(key)
         self._food_cells[key] = cell
         return cell.value
 
-    def peek_food(self, position: Vec2) -> float:
+    def peek_food(self, position: Vector2) -> float:
         return self._food_cells.get(self._cell_key(position), FoodCell(0.0, 0.0, 0.0)).value
 
-    def consume_food(self, position: Vec2, amount: float) -> None:
+    def consume_food(self, position: Vector2, amount: float) -> None:
         key = self._cell_key(position)
         cell = self._get_or_create_food_cell(key)
         cell.value = max(0.0, cell.value - amount)
         self._food_cells[key] = cell
 
-    def add_food(self, position: Vec2, amount: float) -> None:
+    def add_food(self, position: Vector2, amount: float) -> None:
         if amount <= 0:
             return
         key = self._cell_key(position)
@@ -70,18 +71,18 @@ class EnvironmentGrid:
         cell.value = min(cell.max, cell.value + amount)
         self._food_cells[key] = cell
 
-    def sample_danger(self, position: Vec2) -> float:
+    def sample_danger(self, position: Vector2) -> float:
         return self._danger_field.get(self._cell_key(position), 0.0)
 
-    def add_danger(self, position: Vec2, amount: float) -> None:
+    def add_danger(self, position: Vector2, amount: float) -> None:
         key = self._cell_key(position)
         self._danger_field[key] = self._danger_field.get(key, 0.0) + amount
 
-    def sample_pheromone(self, position: Vec2, group_id: int) -> float:
+    def sample_pheromone(self, position: Vector2, group_id: int) -> float:
         field_key = (*self._cell_key(position), group_id)
         return self._pheromone_field.get(field_key, 0.0)
 
-    def add_pheromone(self, position: Vec2, group_id: int, amount: float) -> None:
+    def add_pheromone(self, position: Vector2, group_id: int, amount: float) -> None:
         key = (*self._cell_key(position), group_id)
         self._pheromone_field[key] = self._pheromone_field.get(key, 0.0) + amount
 
@@ -180,7 +181,7 @@ class EnvironmentGrid:
         self._food_cells[key] = cell
         return cell
 
-    def _cell_key(self, position: Vec2) -> Tuple[int, int]:
+    def _cell_key(self, position: Vector2) -> Tuple[int, int]:
         return (int(position.x // self._cell_size), int(position.y // self._cell_size))
 
     def _initialize_patches(self) -> None:

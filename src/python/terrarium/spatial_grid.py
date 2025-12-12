@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-from .vector import Vec2
+from pygame.math import Vector2
 
 
 @dataclass
 class GridEntry:
     id: int
-    position: Vec2
+    position: Vector2
 
 
 class SpatialGrid:
@@ -22,12 +22,12 @@ class SpatialGrid:
         for bucket in self._cells.values():
             bucket.clear()
 
-    def insert(self, agent_id: int, position: Vec2) -> None:
+    def insert(self, agent_id: int, position: Vector2) -> None:
         key = self._cell_key(position)
         bucket = self._cells.setdefault(key, [])
         bucket.append(GridEntry(agent_id, position))
 
-    def get_neighbors(self, position: Vec2, radius: float) -> List[GridEntry]:
+    def get_neighbors(self, position: Vector2, radius: float) -> List[GridEntry]:
         self._neighbor_scratch.clear()
         base_key = self._cell_key(position)
         cell_range = int((radius + self._cell_size - 1e-6) // self._cell_size) + 1
@@ -40,10 +40,9 @@ class SpatialGrid:
                 if not bucket:
                     continue
                 for entry in bucket:
-                    offset = entry.position - position
-                    if offset.length_squared() <= radius_sq:
+                    if entry.position.distance_squared_to(position) <= radius_sq:
                         self._neighbor_scratch.append(entry)
         return self._neighbor_scratch
 
-    def _cell_key(self, position: Vec2) -> Tuple[int, int]:
+    def _cell_key(self, position: Vector2) -> Tuple[int, int]:
         return (int(position.x // self._cell_size), int(position.y // self._cell_size))

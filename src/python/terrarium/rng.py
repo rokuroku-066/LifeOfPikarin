@@ -4,7 +4,7 @@ import math
 import random
 from typing import Optional
 
-from .vector import Vec2
+from pygame.math import Vector2
 
 
 class DeterministicRng:
@@ -24,9 +24,11 @@ class DeterministicRng:
     def next_int(self, max_value: int) -> int:
         return self._random.randrange(max_value)
 
-    def next_unit_circle(self) -> Vec2:
+    def next_unit_circle(self) -> Vector2:
         angle = self._random.uniform(0, 2 * math.pi)
-        return Vec2(math.cos(angle), math.sin(angle))
+        vector = Vector2()
+        vector.from_polar((1, math.degrees(angle)))
+        return vector
 
     def sample_choice(self, items: list[Optional[int]]) -> Optional[int]:
         if not items:
