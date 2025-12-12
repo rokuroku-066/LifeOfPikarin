@@ -1,0 +1,202 @@
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Tuple
+
+from .config import EnvironmentConfig, ResourcePatchConfig
+from .vector import Vec2
+
+
+@dataclass
+class FoodCell:
+    value: float
+    max: float
+    regen_per_second: float
+
+
+class EnvironmentGrid:
+    def __init__(self, cell_size: float, config: EnvironmentConfig):
+        self._cell_size = cell_size
+        self._default_max_food = config.food_per_cell
+        self._default_food_regen_per_second = config.food_regen_per_second
+        self._default_initial_food = min(config.food_per_cell, config.food_per_cell * 0.8)
+        self._food_diffusion_rate = config.food_diffusion_rate
+        self._food_decay_rate = config.food_decay_rate
+        self._pheromone_diffusion_rate = config.pheromone_diffusion_rate
+        self._pheromone_decay_rate = config.pheromone_decay_rate
+        self._danger_diffusion_rate = config.danger_diffusion_rate
+        self._danger_decay_rate = config.danger_decay_rate
+        self._patches: Iterable[ResourcePatchConfig] = config.resource_patches or []
+
+        self._food_cells: Dict[Tuple[int, int], FoodCell] = {}
+        self._food_buffer: Dict[Tuple[int, int], float] = {}
+        self._danger_field: Dict[Tuple[int, int], float] = {}
+        self._danger_buffer: Dict[Tuple[int, int], float] = {}
+        self._pheromone_field: Dict[Tuple[int, int, int], float] = {}
+        self._pheromone_buffer: Dict[Tuple[int, int, int], float] = {}
+
+        self._initialize_patches()
+
+    def reset(self) -> None:
+        self._food_cells.clear()
+        self._food_buffer.clear()
+        self._danger_field.clear()
+        self._danger_buffer.clear()
+        self._pheromone_field.clear()
+        self._pheromone_buffer.clear()
+        self._initialize_patches()
+
+    def sample_food(self, position: Vec2) -> float:
+        key = self._cell_key(position)
+        cell = self._get_or_create_food_cell(key)
+        self._food_cells[key] = cell
+        return cell.value
+
+    def peek_food(self, position: Vec2) -> float:
+        return self._food_cells.get(self._cell_key(position), FoodCell(0.0, 0.0, 0.0)).value
+
+    def consume_food(self, position: Vec2, amount: float) -> None:
+        key = self._cell_key(position)
+        cell = self._get_or_create_food_cell(key)
+        cell.value = max(0.0, cell.value - amount)
+        self._food_cells[key] = cell
+
+    def add_food(self, position: Vec2, amount: float) -> None:
+        if amount <= 0:
+            return
+        key = self._cell_key(position)
+        cell = self._get_or_create_food_cell(key, initial_value=0.0)
+        cell.value = min(cell.max, cell.value + amount)
+        self._food_cells[key] = cell
+
+    def sample_danger(self, position: Vec2) -> float:
+        return self._danger_field.get(self._cell_key(position), 0.0)
+
+    def add_danger(self, position: Vec2, amount: float) -> None:
+        key = self._cell_key(position)
+        self._danger_field[key] = self._danger_field.get(key, 0.0) + amount
+
+    def sample_pheromone(self, position: Vec2, group_id: int) -> float:
+        field_key = (*self._cell_key(position), group_id)
+        return self._pheromone_field.get(field_key, 0.0)
+
+    def add_pheromone(self, position: Vec2, group_id: int, amount: float) -> None:
+        key = (*self._cell_key(position), group_id)
+        self._pheromone_field[key] = self._pheromone_field.get(key, 0.0) + amount
+
+    def tick(self, delta_time: float) -> None:
+        self._regen_food(delta_time)
+        self._diffuse_food(delta_time)
+        if self._danger_diffusion_rate > 0 or self._danger_decay_rate > 0:
+            self._diffuse_field(self._danger_field, self._danger_buffer, self._danger_diffusion_rate, self._danger_decay_rate, delta_time)
+        if self._pheromone_diffusion_rate > 0 or self._pheromone_decay_rate > 0:
+            self._diffuse_field(self._pheromone_field, self._pheromone_buffer, self._pheromone_diffusion_rate, self._pheromone_decay_rate, delta_time)
+
+    def _regen_food(self, delta_time: float) -> None:
+        for key, cell in list(self._food_cells.items()):
+            cell.value = min(cell.max, cell.value + cell.regen_per_second * delta_time)
+            self._food_cells[key] = cell
+
+    def _diffuse_food(self, delta_time: float) -> None:
+        if self._food_diffusion_rate <= 0 and self._food_decay_rate <= 0:
+            return
+
+        self._food_buffer.clear()
+        for key, cell in self._food_cells.items():
+            if cell.value <= 0:
+                continue
+            decayed = cell.value * max(0.0, 1.0 - self._food_decay_rate * delta_time)
+            spread_portion = decayed * min(1.0, self._food_diffusion_rate * delta_time)
+            remain = decayed - spread_portion
+            share = spread_portion * 0.25
+
+            self._accumulate(self._food_buffer, key, remain)
+            self._accumulate(self._food_buffer, (key[0] + 1, key[1]), share)
+            self._accumulate(self._food_buffer, (key[0] - 1, key[1]), share)
+            self._accumulate(self._food_buffer, (key[0], key[1] + 1), share)
+            self._accumulate(self._food_buffer, (key[0], key[1] - 1), share)
+
+        for key, value in self._food_buffer.items():
+            if value <= 1e-4:
+                continue
+            cell = self._get_or_create_food_cell(key, create_if_missing=True, initial_value=0.0)
+            cell.value = min(cell.max, value)
+            self._food_cells[key] = cell
+
+        for key in list(self._food_cells.keys()):
+            if key not in self._food_buffer and self._food_cells[key].value <= 1e-4:
+                self._food_cells.pop(key, None)
+
+    def _diffuse_field(self, field: Dict[Tuple[int, ...], float], buffer: Dict[Tuple[int, ...], float], diffusion_rate: float, decay_rate: float, delta_time: float) -> None:
+        buffer.clear()
+        for key, value in field.items():
+            if value <= 0:
+                continue
+            decayed = value * max(0.0, 1.0 - decay_rate * delta_time)
+            spread = decayed * min(1.0, diffusion_rate * delta_time)
+            remain = decayed - spread
+            share = spread * 0.25
+
+            self._accumulate(buffer, key, remain)
+            offsets = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            for ox, oy in offsets:
+                self._accumulate(buffer, self._add_key(key, ox, oy), share)
+
+        field.clear()
+        for key, value in buffer.items():
+            if value > 1e-5:
+                field[key] = value
+
+    def _add_key(self, key: Tuple[int, ...], dx: int, dy: int) -> Tuple[int, ...]:
+        key_list = list(key)
+        key_list[0] += dx
+        key_list[1] += dy
+        return tuple(key_list)
+
+    def _accumulate(self, buffer: Dict[Tuple[int, ...], float], key: Tuple[int, ...], value: float) -> None:
+        buffer[key] = buffer.get(key, 0.0) + value
+
+    def _get_or_create_food_cell(self, key: Tuple[int, int], create_if_missing: bool = True, initial_value: float | None = None) -> FoodCell:
+        if key in self._food_cells:
+            return self._food_cells[key]
+        if not create_if_missing:
+            return FoodCell(0.0, 0.0, 0.0)
+
+        max_food = self._default_max_food
+        regen = self._default_food_regen_per_second
+        start_value = self._default_initial_food if initial_value is None else initial_value
+        for patch in self._patches:
+            px, py = patch.position
+            dx = key[0] * self._cell_size - px
+            dy = key[1] * self._cell_size - py
+            if math.hypot(dx, dy) <= patch.radius:
+                max_food = patch.resource_per_cell
+                regen = patch.regen_per_second
+                start_value = patch.initial_resource
+                break
+
+        cell = FoodCell(value=start_value, max=max_food, regen_per_second=regen)
+        self._food_cells[key] = cell
+        return cell
+
+    def _cell_key(self, position: Vec2) -> Tuple[int, int]:
+        return (int(position.x // self._cell_size), int(position.y // self._cell_size))
+
+    def _initialize_patches(self) -> None:
+        if not self._patches:
+            return
+
+        for patch in self._patches:
+            cx = int(patch.position[0] // self._cell_size)
+            cy = int(patch.position[1] // self._cell_size)
+            radius_cells = int(max(1, patch.radius // self._cell_size))
+            for dx in range(-radius_cells, radius_cells + 1):
+                for dy in range(-radius_cells, radius_cells + 1):
+                    key = (cx + dx, cy + dy)
+                    cell = FoodCell(
+                        value=patch.initial_resource,
+                        max=patch.resource_per_cell,
+                        regen_per_second=patch.regen_per_second,
+                    )
+                    self._food_cells[key] = cell
