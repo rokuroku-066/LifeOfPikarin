@@ -45,14 +45,6 @@ Codex: Read this file before doing any work and follow it as default working agr
 - No FBX rigs/Animator complexity in Phase 1.
 - Focus: simulation correctness, performance, long-run stability, and visually legible emergent group behaviors.
 
-Unity integration currently lives under `src/Unity/`:
-- `TerrariumHost` (`Terrarium.UnityView`) builds a `World` from inspector-friendly DTOs, ticks it on a fixed timestep, and exposes `AgentSnapshot` arrays each frame.
-- `CubeInstancedRenderer` batches those snapshots into `Graphics.DrawMeshInstanced` calls using a cube mesh and a GPU-instancing-enabled material (colors via `_Color`).
-
-When validating visuals in Unity, wire the host to a renderer (assign the serialized reference or call `RenderWith`), let the host drive the simulation, and keep simulation timing independent from the render loop.
-
-Phase 2 (FBX replacement) will happen later; do not pre-optimize for FBX beyond keeping the Sim/View boundary clean.
-
 ---
 
 ## Repository orientation (expected docs & structure)
@@ -61,8 +53,7 @@ Phase 2 (FBX replacement) will happen later; do not pre-optimize for FBX beyond 
   - If a plan needs context from the design, restate the necessary parts in the plan (do not assume the reader remembers the design doc).
 
 Recommended (but not mandatory) code layout:
-- `src/Sim/` : engine-agnostic simulation core (pure C# data + logic)
-- `src/Unity/` : Unity integration, renderers, scene wiring
+- `src/python/` : simulation core, FastAPI server, and static web viewer assets (Python-only)
 - `docs/` : design + notes
 - `.agent/PLANS.md` : ExecPlan authoring rules (see below)
 
@@ -100,9 +91,9 @@ Every meaningful change must come with a way to verify:
   - agents move smoothly (View interpolation is fine),
   - group formation and splitting are visually legible from an overhead camera.
 
-If you cannot run Unity in the current environment, prioritize:
+If you cannot run the web viewer in the current environment, prioritize:
 - unit tests for the simulation core,
-- deterministic step simulation,
+- deterministic step simulation logs (headless),
 - and leave a clear manual verification recipe for the user.
 
 ---
@@ -115,15 +106,11 @@ If you cannot run Unity in the current environment, prioritize:
 - Record basic performance counters (tick time, neighbor checks, etc.) so regressions can be caught early.
 
 ## Mandatory test execution for any modification
-To keep the Unity-compatible simulation stable, **you must run the simulation unit tests for every change (no exceptions)**:
-1. Before writing code, confirm the .NET SDK (8.0 or later) is available with `dotnet --info`.
-2. Execute `dotnet test tests/SimTests/SimTests.csproj` from the repository root and wait for it to finish on every edit.
-3. If the environment prevents running the test suite, explicitly state the blocking reason in your commit message or PR description and record any manual verification performed.
-
-If `dotnet` is not present on your PATH, install it **before** making code changes so the tests can run:
-1. Follow the steps in [How to run tests locally](#how-to-run-tests-locally) to install the .NET SDK (do not start coding until this succeeds).
-2. Re-open your shell or refresh your PATH if needed, then verify with `dotnet --info`.
-3. Only proceed with development after the SDK is available and the test command succeeds.
+To keep the Python simulation stable, **you must run the Python unit tests for every change (no exceptions)**:
+1. Before writing code, ensure Python 3.11+ is available (check with `python --version`).
+2. Install dependencies via `pip install -r requirements.txt`.
+3. Execute `pytest tests/python` from the repository root and wait for it to finish on every edit.
+4. If the environment prevents running the test suite, explicitly state the blocking reason in your commit message or PR description and record any manual verification performed.
 
 ## Keep code, tests, and docs synchronized
 When you change source code, **update the related tests and documentation in the same change**:
@@ -142,14 +129,10 @@ When you change source code, **update the related tests and documentation in the
 ## How to run tests locally
 - First-time environment setup (Ubuntu/Debian):
   - `sudo apt update`
-  - Install HTTPS transport helpers if missing: `sudo apt install -y apt-transport-https ca-certificates`
-  - Add Microsoft package feed (replace `$(lsb_release -rs)` if unavailable):
-    - `wget https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb -O packages-microsoft-prod.deb`
-    - `sudo dpkg -i packages-microsoft-prod.deb`
-    - `rm packages-microsoft-prod.deb`
-  - Install .NET 8 SDK: `sudo apt update && sudo apt install -y dotnet-sdk-8.0`
-  - Verify install: `dotnet --info` (must show an 8.0.x SDK entry before proceeding).
-- Ensure the .NET SDK (8.0 or later) is installed and available on your PATH.
+  - `sudo apt install -y python3 python3-venv python3-pip`
+  - `python3 -m venv .venv`
+  - `source .venv/bin/activate`
+  - `pip install -r requirements.txt`
 - From the repository root, run the simulation unit tests (required for every change):
-  - `dotnet test tests/SimTests/SimTests.csproj`
-- If you add new test projects, list their invocation here to keep validation steps discoverable.
+  - `pytest tests/python`
+- If you add new test suites, list their invocation here to keep validation steps discoverable.
