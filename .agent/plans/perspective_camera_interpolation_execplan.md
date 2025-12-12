@@ -44,7 +44,8 @@ Record every decision made while working on the plan in the format:
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion. Compare the result against the original purpose.
 
-- Pending implementation.
+- Implemented the perspective camera, lighting, interpolation, and broadcast cadence updates; viewer now renders smoothly interpolated cubes with stable shadows while keeping the simulation authoritative.
+- Performance profiling during follow-up adjustments highlighted the need to minimize per-frame allocations (color caching, shared dummy transforms) to keep FPS steady.
 
 ## Context and Orientation
 

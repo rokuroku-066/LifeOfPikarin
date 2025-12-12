@@ -18,13 +18,15 @@ let prevSnapshot = null;
 let nextSnapshot = null;
 let prevSnapshotTime = 0;
 let nextSnapshotTime = 0;
-const fallbackSnapshotInterval = 100;
+const fallbackSnapshotInterval = 34;
 let renderer;
 let scene;
 let camera;
 let controls;
 let instancedAgents = null;
 let agentGeometry = null;
+const dummy = new THREE.Object3D();
+const colorCache = new Map();
 
 function initThree() {
   scene = new THREE.Scene();
@@ -108,6 +110,7 @@ function connect() {
   socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
   socket.onmessage = (event) => {
     const parsed = JSON.parse(event.data);
+    parsed.agentsById = new Map(parsed.agents.map((agent) => [agent.id, agent]));
     prevSnapshot = nextSnapshot;
     prevSnapshotTime = nextSnapshotTime;
     nextSnapshot = parsed;
@@ -168,14 +171,10 @@ function ensureInstancedAgents(count) {
 function updateView(now) {
   if (!nextSnapshot || !scene) return;
 
-  const prevAgentsById = new Map();
-  if (prevSnapshot) {
-    for (const agent of prevSnapshot.agents) {
-      prevAgentsById.set(agent.id, agent);
-    }
-  }
-
-  const intervalMs = Math.max(nextSnapshotTime - prevSnapshotTime, fallbackSnapshotInterval);
+  const prevAgentsById = prevSnapshot?.agentsById ?? null;
+  const intervalMs = nextSnapshotTime > prevSnapshotTime
+    ? nextSnapshotTime - prevSnapshotTime
+    : fallbackSnapshotInterval;
   const alpha = THREE.MathUtils.clamp((now - prevSnapshotTime) / intervalMs, 0, 1);
   const interpTick = prevSnapshot
     ? THREE.MathUtils.lerp(prevSnapshot.tick, nextSnapshot.tick, alpha)
@@ -188,15 +187,14 @@ function updateView(now) {
   if (!mesh) return;
   mesh.count = nextSnapshot.agents.length;
 
-  const dummy = new THREE.Object3D();
   for (let i = 0; i < nextSnapshot.agents.length; i += 1) {
     const agent = nextSnapshot.agents[i];
-    const prevAgent = prevAgentsById.get(agent.id) ?? agent;
+    const prevAgent = prevAgentsById?.get(agent.id) ?? agent;
     const x = THREE.MathUtils.lerp(prevAgent.x, agent.x, alpha) - halfWorld;
     const z = THREE.MathUtils.lerp(prevAgent.y, agent.y, alpha) - halfWorld;
     const vx = THREE.MathUtils.lerp(prevAgent.vx ?? 0, agent.vx ?? 0, alpha);
     const vy = THREE.MathUtils.lerp(prevAgent.vy ?? 0, agent.vy ?? 0, alpha);
-    const yaw = Math.atan2(vx, vy || 0.0001);
+    const yaw = Math.atan2(vx, vy);
 
     dummy.position.set(x, 0, z);
     dummy.rotation.set(0, yaw, 0);
@@ -212,8 +210,12 @@ function updateView(now) {
 }
 
 function groupColor(id) {
+  const cached = colorCache.get(id);
+  if (cached) return cached;
   const hue = computeGroupHue(id);
-  return new THREE.Color(`hsl(${hue}, 70%, 60%)`);
+  const color = new THREE.Color(`hsl(${hue}, 70%, 60%)`);
+  colorCache.set(id, color);
+  return color;
 }
 
 initThree();
