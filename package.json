@@ -1,0 +1,8 @@
+{
+  "name": "lifeofpikarin",
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test:js": "node --test tests/js"
+  }
+}

@@ -123,9 +123,11 @@ uvicorn terrarium.server:app --reload --port 8000
 
 ```bash
 pytest tests/python
+npm run test:js
 ```
 
 - 同一シードでの決定性、SpatialGrid の近傍取得、個体数の上限チェックをカバーしています。
+- Web ビュー用のユーティリティ（グループ色計算）の決定性を Node 組み込みのテストランナーで検証します。
 
 ---
 
@@ -135,9 +137,11 @@ pytest tests/python
 
 ```bash
 pytest tests/python
+npm run test:js
 ```
 
 - 固定シードでの結果一致、近傍検索の範囲制限、負のフィードバックによる個体数抑制、メトリクス CSV 出力などをカバーしています。
+- Three.js ビュー向けの色ユーティリティについて、グループ ID に対する色相の正規化・ラップアラウンドの挙動を確認できます。
 
 ### 環境フィールド
 
