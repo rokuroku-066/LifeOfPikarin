@@ -15,8 +15,8 @@
 
 ## プロジェクトの現状
 
-- **Simulation (Python)**: `src/python/terrarium/` に固定Δt・SpatialGrid・フィードバック付きの Python 実装を収録。FastAPI ベースの Web ビューアで Unity なしにブラウザから観察可能。
-- **Visualization**: ブラウザ用 Three.js レンダラ（GPU インスタンシング/Points）を `src/python/static/` に同梱。サーバー側でシミュレーションを進め、クライアントはスナップショットを受信して描画するだけです（Sim→View の一方向）。
+- **Simulation (Python)**: `src/terrarium/` に固定Δt・SpatialGrid・フィードバック付きの Python 実装を収録。FastAPI ベースの Web ビューアで Unity なしにブラウザから観察可能。
+- **Visualization**: ブラウザ用 Three.js レンダラ（GPU インスタンシング/Points）を `src/terrarium/static/` に同梱。サーバー側でシミュレーションを進め、クライアントはスナップショットを受信して描画するだけです（Sim→View の一方向）。
 - **Headless 実行**: `python -m terrarium.headless` でメトリクスを CSV 出力し、長時間の安定性を確認できます。
 - **テスト**: `tests/python/` に決定性・上限チェック・SpatialGrid のユニットテストがあります。
 
@@ -93,7 +93,7 @@ python -m terrarium.headless --steps 3000 --seed 42 --initial 120 --max 500 --lo
 
 ## ブラウザ表示付きの Python 版
 
-Unity を起動せずにブラウザで観察できる Python 実装を `src/python/terrarium/` に追加しています。
+Unity を起動せずにブラウザで観察できる Python 実装を `src/terrarium/` に追加しています。
 
 ### セットアップ
 
@@ -117,7 +117,7 @@ uvicorn terrarium.server:app --reload --port 8000
 
 - Web UI は CDN から提供される ES Module 版 Three.js (`https://unpkg.com/three@0.164.1/...`) を読み込み、`OrbitControls` でパン・ズームできます（回転は無効化）。
 - レンダラはオーソグラフィックビューでワールドの中心にカメラを置き、スナップショットを `InstancedMesh` の行列と色に反映します。
-- ウィンドウリサイズ時に投影行列とキャンバスサイズが更新されます。ネットワークが無い場合は Three.js モジュールをローカルに配置し、`src/python/static/app.js` のインポート先を差し替えてください。
+- ウィンドウリサイズ時に投影行列とキャンバスサイズが更新されます。ネットワークが無い場合は Three.js モジュールをローカルに配置し、`src/terrarium/static/app.js` のインポート先を差し替えてください。
 
 ### テスト
 
