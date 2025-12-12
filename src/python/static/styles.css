@@ -38,7 +38,25 @@ button:hover {
   background: #2f81f7;
 }
 
-canvas {
-  border: 1px solid #333;
+main {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+#view-container {
+  width: min(90vw, 960px);
+  aspect-ratio: 1 / 1;
   background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#view-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
