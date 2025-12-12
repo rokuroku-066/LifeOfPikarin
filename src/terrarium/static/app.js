@@ -3,6 +3,7 @@ import { OrbitControls } from 'https://unpkg.com/three@0.164.1/examples/jsm/cont
 import { computeGroupHue } from './color.js';
 
 const container = document.getElementById('view-container');
+const header = document.querySelector('header');
 const tickSpan = document.getElementById('tick');
 const populationSpan = document.getElementById('population');
 const startBtn = document.getElementById('start');
@@ -28,11 +29,26 @@ let agentGeometry = null;
 const dummy = new THREE.Object3D();
 const colorCache = new Map();
 
+function updateLayoutMetrics() {
+  if (!header) return;
+  const { height } = header.getBoundingClientRect();
+  document.documentElement.style.setProperty('--header-height', `${height}px`);
+}
+
+function measureContainer() {
+  const { width, height } = container.getBoundingClientRect();
+  return {
+    width: Math.max(width, 1),
+    height: Math.max(height, 1),
+  };
+}
+
 function initThree() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0a0a);
 
-  const { width, height } = container.getBoundingClientRect();
+  updateLayoutMetrics();
+  const { width, height } = measureContainer();
   const aspect = width / height;
   camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 2000);
   camera.position.set(worldSize, worldSize * 0.8, worldSize);
@@ -85,7 +101,8 @@ function initThree() {
 
 function handleResize() {
   if (!renderer || !camera) return;
-  const { width, height } = container.getBoundingClientRect();
+  updateLayoutMetrics();
+  const { width, height } = measureContainer();
   const aspect = width / height;
   camera.aspect = aspect;
   camera.updateProjectionMatrix();
