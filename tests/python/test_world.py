@@ -26,6 +26,67 @@ def test_deterministic_steps():
     assert result_a == result_b
 
 
+def test_snapshot_contains_metadata_and_agent_signals():
+    config = SimulationConfig(
+        seed=7,
+        time_step=0.5,
+        world_size=42.0,
+        initial_population=1,
+        species=SpeciesConfig(
+            base_speed=1.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+        ),
+    )
+    world = World(config)
+    world.agents[0].velocity = Vector2(1.0, 0.0)
+    world.agents[0].heading = 0.25
+
+    world.step(0)
+    snapshot = world.snapshot(1)
+
+    assert snapshot.world.size == approx(42.0)
+    assert snapshot.metadata.world_size == approx(42.0)
+    assert snapshot.metadata.sim_dt == approx(0.5)
+    assert snapshot.metadata.tick_rate == approx(2.0)
+    assert snapshot.metadata.seed == 7
+
+    assert snapshot.metrics.population == len(world.agents)
+    payload = snapshot.agents[0]
+    for key in ["id", "x", "y", "vx", "vy", "group"]:
+        assert key in payload
+    assert payload["heading"] == approx(world.agents[0].heading)
+    assert payload["speed"] == approx(Vector2(payload["vx"], payload["vy"]).length())
+    assert payload["behavior_state"]
+    assert payload["is_alive"]
+
+
+def test_heading_persists_when_still():
+    config = SimulationConfig(
+        seed=9,
+        time_step=1.0,
+        initial_population=1,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+        ),
+    )
+    world = World(config)
+    world.agents[0].heading = 1.23
+    world.agents[0].velocity = Vector2()
+
+    world.step(0)
+    snapshot = world.snapshot(1)
+
+    assert world.agents[0].heading == approx(1.23)
+    assert snapshot.agents[0]["heading"] == approx(1.23)
+
+
 def test_population_bounds_respected():
     config = SimulationConfig(seed=7, initial_population=20, max_population=25)
     world = World(config)

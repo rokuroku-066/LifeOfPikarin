@@ -60,6 +60,8 @@ class SimulationController:
                 "tick": snapshot.tick,
                 "metrics": asdict(snapshot.metrics),
                 "agents": snapshot.agents,
+                "world": asdict(snapshot.world),
+                "metadata": asdict(snapshot.metadata),
             }
         )
         stale: Set[WebSocket] = set()
