@@ -4,7 +4,7 @@ from pygame.math import Vector2
 from pytest import approx
 
 from terrarium.agent import Agent, AgentState
-from terrarium.config import FeedbackConfig, SimulationConfig, SpeciesConfig
+from terrarium.config import EnvironmentConfig, FeedbackConfig, SimulationConfig, SpeciesConfig
 from terrarium.world import World
 
 
@@ -125,6 +125,7 @@ def test_lonely_agent_switches_to_nearby_majority():
             group_detach_close_neighbor_threshold=1,
             group_detach_after_seconds=2.0,
             group_switch_chance=1.0,
+            group_adoption_chance=0.0,
             group_cohesion_weight=0.0,
             group_formation_warmup_seconds=0.0,
             group_adoption_neighbor_threshold=1,
@@ -352,3 +353,235 @@ def test_detach_radius_separate_from_cohesion():
 
     assert world.agents[0].group_id == 3
     assert world.agents[0].group_lonely_seconds == 0.0
+
+
+def test_boundary_avoidance_pushes_agents_inward():
+    config = SimulationConfig(
+        seed=3,
+        time_step=0.5,
+    world_size=10.0,
+    boundary_margin=2.0,
+    boundary_avoidance_weight=1.0,
+    boundary_turn_weight=1.0,
+    initial_population=0,
+    max_population=1,
+    environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+    species=SpeciesConfig(
+        base_speed=4.0,
+            max_acceleration=10.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+            reproduction_energy_threshold=1.0,
+            adult_age=0.0,
+        ),
+        feedback=FeedbackConfig(
+            local_density_soft_cap=0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+        ),
+    )
+    world = World(config)
+    world.agents.append(
+        Agent(
+            id=30,
+            generation=0,
+            group_id=-1,
+            position=Vector2(0.2, 5.0),
+            velocity=Vector2(),
+            energy=5.0,
+            age=1.0,
+            state=AgentState.WANDER,
+        )
+    )
+    world._next_id = 31
+    world._refresh_index_map()
+
+    world.step(0)
+
+    agent = world.agents[0]
+    assert agent.velocity.x > 0.0
+    assert abs(agent.velocity.y) < agent.velocity.x * 0.2  # 進行方向が内側寄り
+    assert agent.position.x > 0.2
+    assert abs(agent.position.y - 5.0) < 0.2  # 壁離れに集中し縦方向に流れにくい
+
+
+def test_other_group_separation_weight_pushes_harder_than_allies():
+    config = SimulationConfig(
+        seed=13,
+        time_step=1.0,
+        initial_population=0,
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+        species=SpeciesConfig(base_speed=0.0, max_acceleration=0.0, metabolism_per_second=0.0, vision_radius=4.0, wander_jitter=0.0),
+        feedback=FeedbackConfig(
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+            ally_separation_weight=0.2,
+            other_group_separation_weight=1.4,
+            other_group_avoid_radius=0.0,
+            other_group_avoid_weight=0.0,
+        ),
+    )
+    world = World(config)
+    agent = Agent(
+        id=100,
+        generation=0,
+        group_id=7,
+        position=Vector2(0.0, 0.0),
+        velocity=Vector2(),
+        energy=5.0,
+        age=5.0,
+        state=AgentState.WANDER,
+    )
+    ally = Agent(
+        id=101,
+        generation=0,
+        group_id=7,
+        position=Vector2(1.0, 0.0),
+        velocity=Vector2(),
+        energy=5.0,
+        age=5.0,
+        state=AgentState.WANDER,
+    )
+    rival = Agent(
+        id=102,
+        generation=0,
+        group_id=3,
+        position=Vector2(-1.0, 0.0),
+        velocity=Vector2(),
+        energy=5.0,
+        age=5.0,
+        state=AgentState.WANDER,
+    )
+    separation = world._separation(agent, [ally, rival], [Vector2(1.0, 0.0), Vector2(-1.0, 0.0)])
+
+    assert separation.x > 0.9  # 強い他グループ押し出しで右向き
+    assert abs(separation.y) < 1e-6
+
+
+def test_intergroup_avoidance_applies_without_triggering_flee():
+    config = SimulationConfig(
+        seed=23,
+        time_step=1.0,
+        initial_population=0,
+        boundary_margin=0.0,
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+        species=SpeciesConfig(
+            base_speed=2.0,
+            max_acceleration=10.0,
+            metabolism_per_second=0.0,
+            vision_radius=6.0,
+            wander_jitter=0.0,
+            reproduction_energy_threshold=12.0,
+            adult_age=0.0,
+        ),
+        feedback=FeedbackConfig(
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+            ally_separation_weight=0.0,
+            other_group_separation_weight=0.0,
+            other_group_avoid_radius=6.0,
+            other_group_avoid_weight=1.0,
+        ),
+    )
+    world = World(config)
+    agent = Agent(
+        id=200,
+        generation=0,
+        group_id=1,
+        position=Vector2(0.0, 0.0),
+        velocity=Vector2(),
+        energy=8.0,
+        age=5.0,
+        state=AgentState.WANDER,
+    )
+    rival = Agent(
+        id=201,
+        generation=0,
+        group_id=2,
+        position=Vector2(3.0, 0.0),
+        velocity=Vector2(),
+        energy=8.0,
+        age=5.0,
+        state=AgentState.WANDER,
+    )
+
+    desired, sensed = world._compute_desired_velocity(agent, [rival], [Vector2(3.0, 0.0)])
+
+    assert desired.x < 0.0  # 異グループから離れる
+    assert abs(desired.y) < 1e-6
+    assert agent.state == AgentState.WANDER
+    assert not sensed
+
+
+def test_ally_cohesion_weight_scales_pull():
+    base_feedback = dict(
+        group_cohesion_weight=1.0,
+        group_formation_warmup_seconds=0.0,
+        group_adoption_neighbor_threshold=1,
+        ally_separation_weight=0.0,
+        other_group_separation_weight=0.0,
+        other_group_avoid_weight=0.0,
+        other_group_avoid_radius=0.0,
+    )
+    shared_env = EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0)
+    species = SpeciesConfig(
+        base_speed=1.0,
+        max_acceleration=10.0,
+        metabolism_per_second=0.0,
+        vision_radius=4.0,
+        wander_jitter=0.0,
+        reproduction_energy_threshold=12.0,
+        adult_age=0.0,
+    )
+    config_low = SimulationConfig(
+        seed=31,
+        time_step=1.0,
+        initial_population=0,
+        boundary_margin=0.0,
+        environment=shared_env,
+        species=species,
+        feedback=FeedbackConfig(ally_cohesion_weight=1.0, **base_feedback),
+    )
+    config_high = SimulationConfig(
+        seed=32,
+        time_step=1.0,
+        initial_population=0,
+        boundary_margin=0.0,
+        environment=shared_env,
+        species=species,
+        feedback=FeedbackConfig(ally_cohesion_weight=2.0, **base_feedback),
+    )
+
+    def compute_desired(cfg):
+        world = World(cfg)
+        agent = Agent(
+            id=300,
+            generation=0,
+            group_id=5,
+            position=Vector2(0.0, 0.0),
+            velocity=Vector2(),
+            energy=15.0,
+            age=25.0,
+            state=AgentState.WANDER,
+        )
+        ally = Agent(
+            id=301,
+            generation=0,
+            group_id=5,
+            position=Vector2(1.0, 0.0),
+            velocity=Vector2(),
+            energy=15.0,
+            age=25.0,
+            state=AgentState.WANDER,
+        )
+        desired, _ = world._compute_desired_velocity(agent, [ally], [Vector2(1.0, 0.0)])
+        return desired
+
+    desired_low = compute_desired(config_low)
+    desired_high = compute_desired(config_high)
+
+    assert desired_high.x > desired_low.x
+    assert desired_high.y == approx(desired_low.y)

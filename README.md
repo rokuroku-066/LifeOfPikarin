@@ -89,6 +89,7 @@ python -m terrarium.headless --steps 3000 --seed 42 --initial 120 --max 500 --lo
 - 寿命/危険: `BaseDeathProbabilityPerSecond`, `AgeDeathProbabilityPerSecond`, `DensityDeathProbabilityPerNeighborPerSecond`
 - 環境フィールド: `FoodRegenPerSecond`, `FoodFromDeath`, `DangerDiffusionRate` / `DangerDecayRate`, `PheromoneDepositOnBirth`
 - グループ形成・分離: `GroupFormationWarmupSeconds`, `GroupFormationChance`, `GroupAdoptionChance`, `GroupSplitChance` など（初期グループ数は 0）
+- 群れ間距離/結束: `ally_cohesion_weight`, `ally_separation_weight`, `other_group_separation_weight`, `other_group_avoid_radius`, `other_group_avoid_weight`（同グループは密集、異グループは早めに距離を取る調整用）
 
 ---
 

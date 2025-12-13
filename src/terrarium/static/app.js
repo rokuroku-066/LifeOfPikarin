@@ -93,7 +93,9 @@ function initThree() {
   cameras.top.lookAt(0, 0, 0);
 
   cameras.angle = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
-  cameras.angle.position.set(worldSize * 0.9, worldSize * 0.65, -halfWorld * 1.2);
+  const edgeViewHeight = worldSize * 0.08;
+  const edgeViewDepth = halfWorld + worldSize * 0.1;
+  cameras.angle.position.set(0, edgeViewHeight, edgeViewDepth);
   cameras.angle.lookAt(0, 0, 0);
 
   cameras.pov = new THREE.PerspectiveCamera(70, 1, 0.05, 500);

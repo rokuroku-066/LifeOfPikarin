@@ -17,8 +17,10 @@ class FoodCell:
 
 
 class EnvironmentGrid:
-    def __init__(self, cell_size: float, config: EnvironmentConfig):
+    def __init__(self, cell_size: float, config: EnvironmentConfig, world_size: float):
         self._cell_size = cell_size
+        self._world_size = world_size
+        self._max_index = max(1, int(math.ceil(world_size / cell_size)))
         self._default_max_food = config.food_per_cell
         self._default_food_regen_per_second = config.food_regen_per_second
         self._default_initial_food = min(config.food_per_cell, config.food_per_cell * 0.8)
@@ -47,6 +49,22 @@ class EnvironmentGrid:
         self._pheromone_field.clear()
         self._pheromone_buffer.clear()
         self._initialize_patches()
+
+    def _sanitize_food_keys(self) -> None:
+        if not self._food_cells:
+            return
+        for key, cell in list(self._food_cells.items()):
+            clamped_key = (
+                max(0, min(self._max_index - 1, key[0])),
+                max(0, min(self._max_index - 1, key[1])),
+            )
+            if clamped_key != key:
+                self._food_cells.pop(key, None)
+                existing = self._food_cells.get(clamped_key)
+                if existing:
+                    existing.value = min(existing.max, existing.value + cell.value)
+                else:
+                    self._food_cells[clamped_key] = cell
 
     def sample_food(self, position: Vector2) -> float:
         key = self._cell_key(position)
@@ -87,6 +105,7 @@ class EnvironmentGrid:
         self._pheromone_field[key] = self._pheromone_field.get(key, 0.0) + amount
 
     def tick(self, delta_time: float) -> None:
+        self._sanitize_food_keys()
         self._regen_food(delta_time)
         self._diffuse_food(delta_time)
         if self._danger_diffusion_rate > 0 or self._danger_decay_rate > 0:
@@ -96,6 +115,13 @@ class EnvironmentGrid:
 
     def _regen_food(self, delta_time: float) -> None:
         for key, cell in list(self._food_cells.items()):
+            clamped_key = (
+                max(0, min(self._max_index - 1, key[0])),
+                max(0, min(self._max_index - 1, key[1])),
+            )
+            if clamped_key != key:
+                self._food_cells.pop(key, None)
+                key = clamped_key
             cell.value = min(cell.max, cell.value + cell.regen_per_second * delta_time)
             self._food_cells[key] = cell
 
@@ -182,7 +208,11 @@ class EnvironmentGrid:
         return cell
 
     def _cell_key(self, position: Vector2) -> Tuple[int, int]:
-        return (int(position.x // self._cell_size), int(position.y // self._cell_size))
+        clamped_x = max(0.0, min(self._world_size, position.x))
+        clamped_y = max(0.0, min(self._world_size, position.y))
+        ix = max(0, min(self._max_index - 1, int(clamped_x // self._cell_size)))
+        iy = max(0, min(self._max_index - 1, int(clamped_y // self._cell_size)))
+        return (ix, iy)
 
     def _initialize_patches(self) -> None:
         if not self._patches:

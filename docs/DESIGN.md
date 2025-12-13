@@ -129,7 +129,7 @@
   * 初期個体数
   * 資源パッチの数・位置・再生速度
 
-  境界条件: 平面ワールドの座標は常に `[0, world_size]` に収まり、壁で**反射（bounce）**する。座標が外に出た場合は壁面に鏡映して戻し、対応する速度成分を反転させる。Steering の BoundaryForce は現状オフで、将来的に壁付近で内向きのバイアスを足す拡張余地を残す。
+  境界条件: 平面ワールドの座標は常に `[0, world_size]` に収まり、壁で**反射（bounce）**する。座標が外に出た場合は壁面に鏡映して戻し、対応する速度成分を反転させる。これに加えて境界近傍（`boundary_margin` 内）ではソフトな BoundaryForce を掛けて内向きに舵を切る（強さ `boundary_avoidance_weight`、向きの混合 `boundary_turn_weight`、0 で無効化）。
 
 * **AgentGenetics / SpeciesConfig**
   * 平均寿命・寿命ばらつき
@@ -281,7 +281,7 @@ Guideless ALife モデルのように、事前の適応度関数を決めず、�
      * Cohesion（近傍の中心へ向かう）
      * Seek（食料/巣/交配相手などのターゲットへ向かう）
      * Wander（ランダムな揺らぎで自然さを出す）
-     * ObstacleAvoid / BoundaryForce（壁や外周から離れる）
+     * ObstacleAvoid / BoundaryForce（壁や外周から離れる。`boundary_margin` 内で内向きに誘導）
    * Reynolds の Steering Behaviors 同様、複数の単純なベクトルを重み付きで足し合わせるシンプルなモデル。([red3d.com][1])
 
 6. **運動更新（Integration）**

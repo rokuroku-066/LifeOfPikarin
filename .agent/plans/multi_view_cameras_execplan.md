@@ -16,14 +16,15 @@ Use a list with checkboxes to summarize granular steps. Every stopping point mus
 - [x] (2025-12-12 01:20Z) Implement HTML/CSS layout to host three viewports and labels.
 - [x] (2025-12-12 02:05Z) Update Three.js code to render a shared scene to three cameras (top/angle/agent POV) with scissor viewports; add agent selection/switching logic.
 - [x] (2025-12-12 02:30Z) Manual visual check in browser (chrome-devtools) to confirm layout and camera behavior.
-- [ ] (2025-12-12 02:45Z) Run `pytest tests/python` and ensure pass.
+- [x] (2025-12-13 00:26Z) Run `pytest tests/python` (Python 3.13) — all tests now pass.
 - [x] (2025-12-12 02:55Z) Update README (or viewer docs) to describe the three-view layout and POV switching; finalize retrospective.
+- [x] (2025-12-13 00:23Z) Drop edge-angle camera height and align down the grid axis to match the requested low-horizon view.
 
 ## Surprises & Discoveries
 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during implementation. Provide concise evidence (short logs, measurements, or repro steps).
 
-- Python tests currently fail at `tests/python/test_world.py::test_lonely_agent_switches_to_nearby_majority` (group_id stays at 0 after three steps). This predates the viewer change; simulation logic needs follow-up.
+- (Resolved 2025-12-13) Previously failing `tests/python/test_world.py::test_lonely_agent_switches_to_nearby_majority` now passes after fresh deps install and running pytest with Python 3.13.
 - `npm run test:js` fails on Windows because `node --test tests/js` cannot resolve the directory. Running `node --test .\\tests\\js\\*.js` succeeds (4 tests pass).
 ## Decision Log
 

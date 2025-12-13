@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
@@ -30,7 +31,7 @@ class SpatialGrid:
     def get_neighbors(self, position: Vector2, radius: float) -> List[GridEntry]:
         self._neighbor_scratch.clear()
         base_key = self._cell_key(position)
-        cell_range = int((radius + self._cell_size - 1e-6) // self._cell_size) + 1
+        cell_range = int(math.ceil(radius / self._cell_size))
         radius_sq = radius * radius
 
         for dx in range(-cell_range, cell_range + 1):
