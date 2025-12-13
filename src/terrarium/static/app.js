@@ -1,6 +1,12 @@
 import * as THREE from 'https://unpkg.com/three@0.164.1/build/three.module.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.164.1/examples/jsm/controls/OrbitControls.js';
-import { computeGroupHue } from './color.js';
+import {
+  computeGroupHue,
+  elderScaleMultiplier,
+  energyToLightness,
+  pulseLightnessOffset,
+  reproductionDesire,
+} from './color.js';
 
 const container = document.getElementById('view-container');
 const tickSpan = document.getElementById('tick');
@@ -14,6 +20,24 @@ const header = document.querySelector('header');
 
 const worldSize = 100;
 const halfWorld = worldSize / 2;
+const colorSaturation = 0.75;
+const energyVisual = { floor: 0.2, ceiling: 0.9, mid: 10.0, spread: 6.0 };
+const reproductionVisual = {
+  threshold: 12.0,
+  softCap: 20.0,
+  adultAge: 20.0,
+  pulseAmplitude: 0.12,
+  scalePulseAmplitude: 0.06,
+  frequencyHz: 1.6,
+};
+const ageVisual = {
+  adultAge: 20.0,
+  maxAge: 80.0,
+  elderShrink: 0.18,
+  oldJitterAge: 38.0,
+  jitterAmplitude: 0.035,
+  jitterFrequency: 0.85,
+};
 
 const leftSplitRatio = 0.55;
 const rightRowSplit = 0.5;
@@ -37,13 +61,83 @@ let layoutDirty = true;
 let instancedAgents = null;
 let agentGeometry = null;
 const dummy = new THREE.Object3D();
-const colorCache = new Map();
+const tmpColor = new THREE.Color();
 const tmpDir = new THREE.Vector3();
 const tmpPos = new THREE.Vector3();
 const tmpLook = new THREE.Vector3();
 
 let trackedAgentId = null;
 let lastTrackedYaw = 0;
+
+function updateEnergyVisual(snapshot) {
+  const avg = snapshot?.metrics?.average_energy;
+  if (!Number.isFinite(avg) || avg <= 0) return;
+  const targetMid = avg;
+  energyVisual.mid = THREE.MathUtils.lerp(energyVisual.mid, targetMid, 0.12);
+  const targetSpread = Math.max(4.0, targetMid * 0.65);
+  energyVisual.spread = THREE.MathUtils.lerp(energyVisual.spread, targetSpread, 0.12);
+  reproductionVisual.threshold = Math.max(6.0, energyVisual.mid * 0.9);
+  reproductionVisual.softCap = Math.max(reproductionVisual.threshold + 2.0, energyVisual.mid * 1.6);
+}
+
+function lerpHeading(a, b, t) {
+  const start = Number.isFinite(a) ? a : 0;
+  const end = Number.isFinite(b) ? b : start;
+  let delta = end - start;
+  delta = ((delta + Math.PI) % (Math.PI * 2)) - Math.PI;
+  return start + delta * THREE.MathUtils.clamp(t, 0, 1);
+}
+
+function agentPhase(agent) {
+  const seed = Number.isFinite(agent?.appearance_seed) ? agent.appearance_seed : agent?.id ?? 0;
+  return seed * 0.47;
+}
+
+function reproductionScalePulse(now, desire, phase) {
+  const amp = (reproductionVisual.scalePulseAmplitude ?? 0.05) * THREE.MathUtils.clamp(desire, 0, 1);
+  if (amp <= 0) return 0;
+  const omega = (reproductionVisual.frequencyHz ?? 1.4) * 2 * Math.PI;
+  return amp * Math.sin(omega * (now / 1000) + phase);
+}
+
+function computeScale(agent, now, baseSizeOverride, desire) {
+  const baseSize = Number.isFinite(baseSizeOverride)
+    ? baseSizeOverride
+    : Number.isFinite(agent.size)
+      ? agent.size
+      : 0.8;
+  const elderFactor = elderScaleMultiplier(agent.age, ageVisual);
+  let scale = baseSize * elderFactor;
+  const oldStart = ageVisual.oldJitterAge ?? ageVisual.maxAge * 0.8;
+  if (Number.isFinite(agent.age) && agent.age >= oldStart) {
+    const jitterAmp = ageVisual.jitterAmplitude ?? 0.03;
+    const jitterFreq = ageVisual.jitterFrequency ?? 0.9;
+    const phase = agentPhase(agent);
+    const wobble = jitterAmp * Math.sin((now / 1000) * jitterFreq * 2 * Math.PI + phase);
+    scale *= 1 + wobble;
+  }
+  const phase = agentPhase(agent);
+  scale *= 1 + reproductionScalePulse(now, desire ?? 0, phase);
+  return THREE.MathUtils.clamp(scale, 0.1, 2.0);
+}
+
+function computeColor(agent, now, desire) {
+  const hue = computeGroupHue(agent.group);
+  const baseLightness = energyToLightness(agent.energy, energyVisual);
+  const computedDesire = desire ?? reproductionDesire(agent.energy, agent.age, agent.behavior_state, {
+    reproductionThreshold: reproductionVisual.threshold,
+    energySoftCap: reproductionVisual.softCap,
+    adultAge: reproductionVisual.adultAge,
+  });
+  const pulse = pulseLightnessOffset(now, computedDesire, {
+    amplitude: reproductionVisual.pulseAmplitude,
+    frequencyHz: reproductionVisual.frequencyHz,
+    phase: agentPhase(agent),
+  });
+  const finalLightness = THREE.MathUtils.clamp(baseLightness + pulse, 0.12, 0.92);
+  tmpColor.setHSL(hue / 360, colorSaturation, finalLightness);
+  return tmpColor;
+}
 
 function updateLayoutMetrics() {
   if (!header) return;
@@ -301,6 +395,7 @@ function updateView(now) {
     return;
   }
 
+  updateEnergyVisual(nextSnapshot);
   const prevAgentsById = prevSnapshot?.agentsById ?? null;
   const intervalMs = nextSnapshotTime > prevSnapshotTime
     ? nextSnapshotTime - prevSnapshotTime
@@ -317,7 +412,7 @@ function updateView(now) {
   const trackedAgent = selectTrackedAgent(nextSnapshot);
   const trackedChanged = previousTrackedId !== trackedAgentId;
   if (trackedChanged && trackedAgent) {
-    lastTrackedYaw = Math.atan2(trackedAgent.vx ?? 0, trackedAgent.vy ?? 0);
+    lastTrackedYaw = trackedAgent.heading ?? lastTrackedYaw ?? 0;
   }
   let trackedPose = null;
 
@@ -334,23 +429,34 @@ function updateView(now) {
       const z = THREE.MathUtils.lerp(prevAgent.y, agent.y, alpha) - halfWorld;
       const vx = THREE.MathUtils.lerp(prevAgent.vx ?? 0, agent.vx ?? 0, alpha);
       const vy = THREE.MathUtils.lerp(prevAgent.vy ?? 0, agent.vy ?? 0, alpha);
-      const yaw = Math.atan2(vx, vy);
+      const prevHeading = prevAgent.heading ?? Math.atan2(prevAgent.vx ?? 0, prevAgent.vy ?? 0);
+      const nextHeading = agent.heading ?? Math.atan2(agent.vx ?? 0, agent.vy ?? 0);
+      const yaw = lerpHeading(prevHeading, nextHeading, alpha);
+      const desire = reproductionDesire(agent.energy, agent.age, agent.behavior_state, {
+        reproductionThreshold: reproductionVisual.threshold,
+        energySoftCap: reproductionVisual.softCap,
+        adultAge: reproductionVisual.adultAge,
+      });
+      const prevSize = Number.isFinite(prevAgent.size) ? prevAgent.size : agent.size ?? 0.8;
+      const nextSize = Number.isFinite(agent.size) ? agent.size : prevSize;
+      const blendedSize = THREE.MathUtils.lerp(prevSize, nextSize, alpha);
+      const scale = computeScale(agent, now, blendedSize, desire);
 
       dummy.position.set(x, 0, z);
+      dummy.scale.set(scale, scale, scale);
       dummy.rotation.set(0, yaw, 0);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
 
-      const color = groupColor(agent.group);
+      const color = computeColor(agent, now, desire);
       const base = i * 3;
       colors[base] = color.r;
       colors[base + 1] = color.g;
       colors[base + 2] = color.b;
 
       if (trackedAgent && agent.id === trackedAgent.id) {
-        const speed = Math.hypot(vx, vy);
-        const stableYaw = speed > 0.0001 ? yaw : lastTrackedYaw;
-        lastTrackedYaw = stableYaw;
+        const stableYaw = Number.isFinite(yaw) ? yaw : lastTrackedYaw;
+        lastTrackedYaw = stableYaw ?? 0;
         trackedPose = {
           x,
           z,
@@ -420,16 +526,6 @@ function updatePovCamera(pose, viewport) {
   cameras.pov.position.copy(position);
   cameras.pov.up.set(0, 1, 0);
   cameras.pov.lookAt(lookTarget);
-}
-
-function groupColor(id) {
-  const cached = colorCache.get(id);
-  if (cached) return cached;
-  const hue = computeGroupHue(id);
-  const color = new THREE.Color();
-  color.setHSL(hue / 360, 0.7, 0.6);
-  colorCache.set(id, color);
-  return color;
 }
 
 initThree();

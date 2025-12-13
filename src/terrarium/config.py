@@ -90,8 +90,8 @@ class FeedbackConfig:
 @dataclass
 class SimulationConfig:
     time_step: float = 1.0 / 50.0
-    initial_population: int = 10
-    max_population: int = 200
+    initial_population: int = 100
+    max_population: int = 300
     world_size: float = 100.0
     boundary_margin: float = 10.0
     boundary_avoidance_weight: float = 1.6
