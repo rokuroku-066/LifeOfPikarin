@@ -96,6 +96,7 @@ class World:
         self._next_id = 0
         self._next_group_id = 0
         self._metrics: List[TickMetrics] = []
+        self._environment_accumulator = 0.0
         self._bootstrap_population()
 
     @property
@@ -122,6 +123,7 @@ class World:
         self._metrics.clear()
         self._next_id = 0
         self._next_group_id = 0
+        self._environment_accumulator = 0.0
         self._bootstrap_population()
 
     def step(self, tick: int) -> TickMetrics:
@@ -173,10 +175,7 @@ class World:
 
         active_groups = self._active_group_ids()
         self._apply_field_events()
-        self._environment.prune_pheromones(active_groups)
-        self._environment.tick(self._config.time_step)
-        # Ensure environment grids stay within world bounds (defensive against drift)
-        self._environment._sanitize_food_keys()
+        self._tick_environment(active_groups)
         self._apply_births()
         deaths += self._remove_dead()
 
@@ -220,6 +219,8 @@ class World:
                 energy=self._config.species.reproduction_energy_threshold * self._config.species.initial_energy_fraction_of_threshold,
                 age=self._sample_initial_age(),
                 state=AgentState.WANDER,
+                wander_dir=self._rng.next_unit_circle(),
+                wander_time=self._config.species.wander_refresh_seconds,
             )
             self._agents.append(agent)
             self._id_to_index[self._next_id] = len(self._agents) - 1
@@ -321,7 +322,11 @@ class World:
                 if majority_group != self._UNGROUPED and self._rng.next_float() < self._config.feedback.group_switch_chance:
                     agent.group_id = majority_group
                 else:
-                    agent.group_id = self._UNGROUPED
+                    if can_form_groups and self._rng.next_float() < self._config.feedback.group_detach_new_group_chance:
+                        agent.group_id = self._next_group_id
+                        self._next_group_id += 1
+                    else:
+                        agent.group_id = self._UNGROUPED
                 agent.group_lonely_seconds = 0.0
 
         if can_form_groups:
@@ -414,14 +419,14 @@ class World:
         if agent.energy < self._config.species.reproduction_energy_threshold * 0.6 or food_here > self._config.environment.food_per_cell * 0.5 or food_gradient.length_squared() > 0.01:
             agent.state = AgentState.SEEKING_FOOD
             desired = desired + food_bias * (self._config.species.base_speed * 0.4)
-            desired = desired + self._rng.next_unit_circle() * (self._config.species.base_speed * 0.25)
+            desired = desired + self._wander_direction(agent) * (self._config.species.base_speed * 0.25)
         elif agent.energy > self._config.species.reproduction_energy_threshold and agent.age > self._config.species.adult_age:
             agent.state = AgentState.SEEKING_MATE
             desired = desired + self._cohesion(neighbor_offsets) * (self._config.species.base_speed * 0.8)
             desired = desired + pheromone_bias * (self._config.species.base_speed * 0.25)
         else:
             agent.state = AgentState.WANDER
-            desired = desired + self._rng.next_unit_circle() * (self._config.species.base_speed * self._config.species.wander_jitter)
+            desired = desired + self._wander_direction(agent) * (self._config.species.base_speed * self._config.species.wander_jitter)
             desired = desired + pheromone_bias * (self._config.species.base_speed * 0.15)
 
         desired = desired + personal_space_bias * (self._config.species.base_speed * self._config.feedback.personal_space_weight)
@@ -531,6 +536,15 @@ class World:
             return ZERO
         return _safe_normalize(accum / count)
 
+    def _wander_direction(self, agent: Agent) -> Vector2:
+        refresh = max(1e-4, self._config.species.wander_refresh_seconds)
+        if agent.wander_time <= 0.0 or agent.wander_dir.length_squared() < 1e-10:
+            agent.wander_dir = self._rng.next_unit_circle()
+            agent.wander_time = refresh
+        else:
+            agent.wander_time -= self._config.time_step
+        return agent.wander_dir
+
     def _boundary_avoidance(self, position: Vector2) -> tuple[Vector2, float]:
         margin = self._config.boundary_margin
         size = self._config.world_size
@@ -599,6 +613,14 @@ class World:
         up = self._environment.sample_danger(self._clamp_position(position + Vector2(0, step)))
         down = self._environment.sample_danger(self._clamp_position(position + Vector2(0, -step)))
         return Vector2(right - left, up - down)
+
+    def _tick_environment(self, active_groups: Set[int]) -> None:
+        env_dt = self._config.environment_tick_interval if self._config.environment_tick_interval > 1e-6 else self._config.time_step
+        self._environment_accumulator += self._config.time_step
+        while self._environment_accumulator >= env_dt:
+            self._environment.prune_pheromones(active_groups)
+            self._environment.tick(env_dt)
+            self._environment_accumulator -= env_dt
 
     def _apply_life_cycle(self, agent: Agent, neighbor_count: int, can_create_groups: bool) -> int:
         dt = self._config.time_step

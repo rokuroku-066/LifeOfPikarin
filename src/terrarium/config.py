@@ -11,7 +11,7 @@ import yaml
 class SpeciesConfig:
     base_speed: float = 6.0
     max_acceleration: float = 20.0
-    vision_radius: float = 8.0
+    vision_radius: float = 6.0
     metabolism_per_second: float = 0.8
     birth_energy_cost: float = 8.0
     reproduction_energy_threshold: float = 12.0
@@ -20,6 +20,7 @@ class SpeciesConfig:
     initial_age_max: float = 0.0
     max_age: float = 80.0
     wander_jitter: float = 0.25
+    wander_refresh_seconds: float = 0.12
     initial_energy_fraction_of_threshold: float = 0.8
     energy_soft_cap: float = 20.0
     high_energy_metabolism_slope: float = 0.015
@@ -53,14 +54,14 @@ class EnvironmentConfig:
 
 @dataclass
 class FeedbackConfig:
-    local_density_soft_cap: int = 15
-    density_reproduction_penalty: float = 0.3
-    stress_drain_per_neighbor: float = 0.01
-    disease_probability_per_neighbor: float = 0.002
-    density_reproduction_slope: float = 0.02
+    local_density_soft_cap: int = 22
+    density_reproduction_penalty: float = 0.6
+    stress_drain_per_neighbor: float = 0.006
+    disease_probability_per_neighbor: float = 0.001
+    density_reproduction_slope: float = 0.008
     base_death_probability_per_second: float = 0.0005
     age_death_probability_per_second: float = 0.00015
-    density_death_probability_per_neighbor_per_second: float = 0.0001
+    density_death_probability_per_neighbor_per_second: float = 0.00005
     group_formation_warmup_seconds: float = 0.0
     group_formation_neighbor_threshold: int = 3
     group_formation_chance: float = 0.05
@@ -79,6 +80,7 @@ class FeedbackConfig:
     group_detach_close_neighbor_threshold: int = 2
     group_detach_after_seconds: float = 4.0
     group_switch_chance: float = 0.25
+    group_detach_new_group_chance: float = 0.6
     group_cohesion_weight: float = 3.0
     ally_cohesion_weight: float = 1.3
     ally_separation_weight: float = 0.45
@@ -90,13 +92,14 @@ class FeedbackConfig:
 @dataclass
 class SimulationConfig:
     time_step: float = 1.0 / 50.0
-    initial_population: int = 100
-    max_population: int = 300
+    environment_tick_interval: float = 0.12
+    initial_population: int = 240
+    max_population: int = 500
     world_size: float = 100.0
     boundary_margin: float = 10.0
     boundary_avoidance_weight: float = 1.6
     boundary_turn_weight: float = 0.85
-    cell_size: float = 2.5
+    cell_size: float = 3.0
     seed: int = 1337
     config_version: str = "v1"
     species: SpeciesConfig = field(default_factory=SpeciesConfig)

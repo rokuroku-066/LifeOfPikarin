@@ -7,6 +7,8 @@
 - SpatialGrid を用いた近傍検索で **O(N^2) を回避**
 - ワールド境界は反射（壁で位置を折り返し、速度を反転）し、領域外にはみ出さない
 - 複数のグループ（コロニー）が自然に形成されるようなルール設計
+- 高密度ペナルティを緩め（soft cap 22、密度繁殖係数 0.6、疾病・死亡の密度係数を半減）、同グループが密集しやすいが `personal_space` で重なりは防ぐ
+- 近距離仲間が一定時間いないままの所属エージェントは、新しいグループとして分離して再コロニー化し（確率 `group_detach_new_group_chance`）、放浪状態に落ちないようにする
 - 表示は Phase 1 では **キューブ＋GPU インスタンシング**
 - Codex 用の `AGENTS.md` / `.agent/PLANS.md` と連携
 
@@ -88,6 +90,9 @@ python -m terrarium.headless --steps 3000 --seed 42 --initial 120 --max 500 --lo
 - 繁殖トリガ: `ReproductionEnergyThreshold`, `AdultAge`, `DensityReproductionSlope`, `DensityReproductionPenalty`
 - 寿命/危険: `BaseDeathProbabilityPerSecond`, `AgeDeathProbabilityPerSecond`, `DensityDeathProbabilityPerNeighborPerSecond`
 - 環境フィールド: `FoodRegenPerSecond`, `FoodFromDeath`, `DangerDiffusionRate` / `DangerDecayRate`, `PheromoneDepositOnBirth`
+- フィールド更新頻度: `EnvironmentTickInterval`（既定 0.12 秒）。食料/危険/フェロモンの拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
+- 初期/最大個体数: `initial_population` 240, `max_population` 500（スナップショットサイズと近傍計算コストを抑制）。
+- ランダム歩行の更新周期: `wander_refresh_seconds`（SpeciesConfig, 既定 0.12 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
 - グループ形成・分離: `GroupFormationWarmupSeconds`, `GroupFormationChance`, `GroupAdoptionChance`, `GroupSplitChance` など（初期グループ数は 0）
 - 群れ間距離/結束: `ally_cohesion_weight`, `ally_separation_weight`, `other_group_separation_weight`, `other_group_avoid_radius`, `other_group_avoid_weight`（同グループは密集、異グループは早めに距離を取る調整用）
 
@@ -120,6 +125,7 @@ uvicorn terrarium.server:app --reload --port 8000
 - Web UI は CDN から提供される ES Module 版 Three.js (`https://unpkg.com/three@0.164.1/...`) を読み込みます。右上の斜めカメラは `OrbitControls` でパン / ズーム / 回転できます（Sim には一切書き込まない）。
 - 画面は 3 分割です: 左 = 真上オーソグラフィック、右上 = フィールド端からのパース付き斜めビュー、右下 = ランダムに選ばれた個体の POV（個体が消滅したら自動で別個体に切替）。
 - 単一の `InstancedMesh` を共有し、scissor viewport で 3 つのカメラをレンダリングします。スナップショットの行列と色のみを更新するため View 側で O(N²) にはなりません。
+- パフォーマンス対策としてピクセル比を `min(devicePixelRatio, 1.5)` に制限し、影描画を無効化して GPU 負荷を抑えています。大規模インスタンスでもフレーム時間を安定させる狙いです。
 - ウィンドウリサイズ時に投影行列とキャンバスサイズが更新されます。ネットワークが無い場合は Three.js モジュールをローカルに配置し、`src/terrarium/static/app.js` のインポート先を差し替えてください。
 
 ### テスト

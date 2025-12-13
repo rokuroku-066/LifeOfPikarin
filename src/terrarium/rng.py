@@ -25,10 +25,8 @@ class DeterministicRng:
         return self._random.randrange(max_value)
 
     def next_unit_circle(self) -> Vector2:
-        angle = self._random.uniform(0, 2 * math.pi)
-        vector = Vector2()
-        vector.from_polar((1, math.degrees(angle)))
-        return vector
+        angle = self._random.uniform(0.0, 2.0 * math.pi)
+        return Vector2(math.cos(angle), math.sin(angle))
 
     def sample_choice(self, items: list[Optional[int]]) -> Optional[int]:
         if not items:

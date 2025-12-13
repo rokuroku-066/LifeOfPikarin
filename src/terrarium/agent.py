@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from pygame.math import Vector2
@@ -28,3 +28,5 @@ class Agent:
     stress: float = 0.0
     group_lonely_seconds: float = 0.0
     heading: float = 0.0
+    wander_dir: Vector2 = field(default_factory=Vector2)
+    wander_time: float = 0.0

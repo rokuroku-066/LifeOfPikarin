@@ -175,10 +175,12 @@ function initThree() {
   const { width, height } = measureContainer();
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
+  const pixelRatio = Math.min(window.devicePixelRatio ?? 1, 1.5);
+  renderer.setPixelRatio(pixelRatio);
   renderer.setSize(width, height);
   renderer.autoClear = false;
   renderer.setScissorTest(true);
+  renderer.shadowMap.enabled = false;
   container.appendChild(renderer.domElement);
 
   cameras.top = new THREE.OrthographicCamera(-halfWorld, halfWorld, halfWorld, -halfWorld, 0.1, 2000);
@@ -220,15 +222,7 @@ function initThree() {
 
   const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
   directionalLight.position.set(worldSize, worldSize * 1.5, worldSize);
-  directionalLight.castShadow = true;
-  directionalLight.shadow.mapSize.width = 2048;
-  directionalLight.shadow.mapSize.height = 2048;
-  directionalLight.shadow.camera.near = 10;
-  directionalLight.shadow.camera.far = worldSize * 4;
-  directionalLight.shadow.camera.left = -worldSize;
-  directionalLight.shadow.camera.right = worldSize;
-  directionalLight.shadow.camera.top = worldSize;
-  directionalLight.shadow.camera.bottom = -worldSize;
+  directionalLight.castShadow = false;
   scene.add(directionalLight);
 
   window.addEventListener('resize', () => {
@@ -341,7 +335,7 @@ function ensureInstancedAgents(count) {
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.1, roughness: 0.8 });
   instancedAgents = new THREE.InstancedMesh(agentGeometry, material, count);
   instancedAgents.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  instancedAgents.castShadow = true;
+  instancedAgents.castShadow = false;
   scene.add(instancedAgents);
   ensureInstanceColor(instancedAgents, count);
   return instancedAgents;
