@@ -406,6 +406,52 @@ def test_boundary_avoidance_pushes_agents_inward():
     assert abs(agent.position.y - 5.0) < 0.2  # 壁離れに集中し縦方向に流れにくい
 
 
+def test_personal_space_pushes_when_too_close():
+    config = SimulationConfig(
+        seed=42,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(base_speed=1.0, max_acceleration=10.0, metabolism_per_second=0.0, vision_radius=2.0, wander_jitter=0.0),
+        feedback=FeedbackConfig(
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+            personal_space_radius=1.0,
+            personal_space_weight=2.0,
+            group_split_neighbor_threshold=10,
+            group_split_chance=0.0,
+            group_mutation_chance=0.0,
+        ),
+        boundary_margin=0.0,
+    )
+    world = World(config)
+    agent = Agent(
+        id=1,
+        generation=0,
+        group_id=-1,
+        position=Vector2(0.0, 0.0),
+        velocity=Vector2(),
+        energy=5.0,
+        age=1.0,
+        state=AgentState.WANDER,
+    )
+    other = Agent(
+        id=2,
+        generation=0,
+        group_id=-1,
+        position=Vector2(0.2, 0.0),
+        velocity=Vector2(),
+        energy=5.0,
+        age=1.0,
+        state=AgentState.WANDER,
+    )
+    desired, sensed = world._compute_desired_velocity(agent, [other], [Vector2(0.2, 0.0)])
+    assert desired.x < 0.0  # 押し返される
+    # ほぼ一直線の押し返しになることを確認（y成分が小さい）
+    assert abs(desired.y) < abs(desired.x) * 0.25
+    assert not sensed
+
+
 def test_other_group_separation_weight_pushes_harder_than_allies():
     config = SimulationConfig(
         seed=13,

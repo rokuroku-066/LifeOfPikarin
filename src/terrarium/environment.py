@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 from pygame.math import Vector2
 
@@ -175,10 +175,20 @@ class EnvironmentGrid:
             if value > 1e-5:
                 field[key] = value
 
+    def prune_pheromones(self, active_groups: Set[int]) -> None:
+        if not self._pheromone_field:
+            return
+        if not active_groups:
+            self._pheromone_field.clear()
+            return
+        for key in list(self._pheromone_field.keys()):
+            if key[2] not in active_groups:
+                self._pheromone_field.pop(key, None)
+
     def _add_key(self, key: Tuple[int, ...], dx: int, dy: int) -> Tuple[int, ...]:
         key_list = list(key)
-        key_list[0] += dx
-        key_list[1] += dy
+        key_list[0] = max(0, min(self._max_index - 1, key_list[0] + dx))
+        key_list[1] = max(0, min(self._max_index - 1, key_list[1] + dy))
         return tuple(key_list)
 
     def _accumulate(self, buffer: Dict[Tuple[int, ...], float], key: Tuple[int, ...], value: float) -> None:

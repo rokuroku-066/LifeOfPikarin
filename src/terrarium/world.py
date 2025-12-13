@@ -171,7 +171,9 @@ class World:
             if agent.state == AgentState.FLEE or sensed_danger:
                 self._pending_danger.append((agent.position, self._config.environment.danger_pulse_on_flee))
 
+        active_groups = self._active_group_ids()
         self._apply_field_events()
+        self._environment.prune_pheromones(active_groups)
         self._environment.tick(self._config.time_step)
         # Ensure environment grids stay within world bounds (defensive against drift)
         self._environment._sanitize_food_keys()
@@ -403,6 +405,7 @@ class World:
         danger_gradient_away = self._danger_gradient(agent.position)
         group_cohesion_bias = self._group_cohesion(agent, neighbors, neighbor_offsets)
         intergroup_bias = self._intergroup_avoidance(agent, neighbors, neighbor_offsets)
+        personal_space_bias = self._personal_space(neighbor_offsets)
 
         food_bias = _safe_normalize(food_gradient) if food_gradient.length_squared() > 1e-4 else ZERO
         pheromone_bias = _safe_normalize(pheromone_gradient) if pheromone_gradient.length_squared() > 1e-4 else ZERO
@@ -421,6 +424,7 @@ class World:
             desired = desired + self._rng.next_unit_circle() * (self._config.species.base_speed * self._config.species.wander_jitter)
             desired = desired + pheromone_bias * (self._config.species.base_speed * 0.15)
 
+        desired = desired + personal_space_bias * (self._config.species.base_speed * self._config.feedback.personal_space_weight)
         desired = desired + intergroup_bias * (self._config.species.base_speed * self._config.feedback.other_group_avoid_weight)
         desired = desired + self._separation(agent, neighbors, neighbor_offsets) * (self._config.species.base_speed * 1.4)
         desired = desired + self._alignment(agent, neighbors) * (self._config.species.base_speed * 0.3)
@@ -479,6 +483,25 @@ class World:
             if offset.length_squared() > cohesion_radius_sq:
                 continue
             accum = accum + offset
+            count += 1
+        if count == 0:
+            return ZERO
+        return _safe_normalize(accum / count)
+
+    def _personal_space(self, neighbor_offsets: List[Vector2]) -> Vector2:
+        radius = self._config.feedback.personal_space_radius
+        if radius <= 1e-6 or not neighbor_offsets:
+            return ZERO
+        radius_sq = radius * radius
+        accum = ZERO
+        count = 0
+        for offset in neighbor_offsets:
+            dist_sq = offset.length_squared()
+            if dist_sq <= 1e-9 or dist_sq > radius_sq:
+                continue
+            dist = math.sqrt(dist_sq)
+            strength = 1.0 - min(1.0, dist / radius)
+            accum = accum - _safe_normalize(offset) * strength
             count += 1
         if count == 0:
             return ZERO
@@ -735,6 +758,16 @@ class World:
         groups = len(self._group_scratch)
         self._group_scratch.clear()
         return population, avg_energy, avg_age, groups
+
+    def _active_group_ids(self) -> Set[int]:
+        groups: Set[int] = set()
+        for agent in self._agents:
+            if agent.group_id != self._UNGROUPED:
+                groups.add(agent.group_id)
+        for agent in self._birth_queue:
+            if agent.group_id != self._UNGROUPED:
+                groups.add(agent.group_id)
+        return groups
 
     def _create_metrics(self, tick: int, births: int, deaths: int, neighbor_checks: int, duration_ms: float) -> TickMetrics:
         population, avg_energy, avg_age, groups = self._population_stats()
