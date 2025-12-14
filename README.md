@@ -7,7 +7,7 @@
 - SpatialGrid を用いた近傍検索で **O(N^2) を回避**
 - ワールド境界は反射（壁で位置を折り返し、速度を反転）し、領域外にはみ出さない
 - 複数のグループ（コロニー）が自然に形成されるようなルール設計
-- 高密度ペナルティを緩め（soft cap 22、密度繁殖係数 0.6、疾病・死亡の密度係数を半減）、同グループが密集しやすいが `personal_space` で重なりは防ぐ
+- 高密度では繁殖抑制・ストレス・疾病などの負のフィードバックで暴走を防ぎ、`personal_space` / `min_separation_*` で近距離の重なりも抑える
 - 近距離仲間が一定時間いないままの所属エージェントは、新しいグループとして分離して再コロニー化し（確率 `group_detach_new_group_chance`）、放浪状態に落ちないようにする
 - 表示は Phase 1 では **キューブ＋GPU インスタンシング**
 - Codex 用の `AGENTS.md` / `.agent/PLANS.md` と連携
@@ -41,9 +41,11 @@
 .
 ├── AGENTS.md             # Codex 向けガイド
 ├── .agent/PLANS.md       # ExecPlan の運用ルール
-├── docs/DESIGN.md        # システム設計（Simulation / View / Grid 等）
+├── docs/                 # システム設計（Simulation / View / Grid 等）
+│   ├── DESIGN.md
+│   └── snapshot.md       # WebSocket スナップショット仕様
 ├── src/
-│   └── python/           # Python 製シミュレーションと Web ビューア
+│   └── terrarium/        # Python 製シミュレーション + FastAPI/WS + Three.js ビューア
 ├── tests/python/         # Python シミュレーションのユニットテスト
 ├── pyproject.toml        # Python パッケージ定義
 └── requirements.txt      # 依存パッケージ一覧
@@ -72,31 +74,36 @@
 Python 製のヘッドレスランナーでステップ単位のシミュレーションを回し、CSV にメトリクスを書き出します。
 
 ```bash
-python -m terrarium.headless --steps 3000 --seed 42 --initial 120 --max 500 --log artifacts/metrics_smoke.csv
+python -m terrarium.headless --steps 3000 --seed 42 --log artifacts/metrics_smoke.csv
 ```
+
+決定論的な CSV（同じ seed で 2 回回したときに完全一致させたい）を取りたい場合は `--deterministic-log` を付けてください。`tick_ms` は 0.000 に固定され、残りの値が同一 seed で一致します。
 
 出力される CSV のカラム例:
 
 - `tick`: シミュレーションステップ
 - `population`: 生存個体数
 - `births` / `deaths`: ステップ中の出生・死亡数
-- `avgEnergy` / `avgAge`: 平均エネルギー・平均年齢
+- `avg_energy` / `avg_age`: 平均エネルギー・平均年齢
 - `groups`: グループ（群れ）数（初期は 0。未所属の個体はカウントしない）
-- `neighborChecks`: 近傍判定のカウント（O(N^2) を避けるためのヘルス指標）
-- `tickDurationMs`: 1 ステップの処理時間（ミリ秒）
+- `neighbor_checks`: 近傍判定のカウント（O(N^2) を避けるためのヘルス指標）
+- `tick_ms`: 1 ステップの処理時間（ミリ秒）。壁時計時間なので通常は実行ごとに変わります（`--deterministic-log` では 0.000）。
 
-`--log` で指定したパス配下にディレクトリが無ければ自動で作成されます。主要な調整パラメータ（`terrarium.config.SimulationConfig` に対応）:
-- エネルギー上限と代謝: `EnergySoftCap`, `HighEnergyMetabolismSlope`, `MetabolismPerSecond`, `InitialEnergyFractionOfThreshold`
-- 繁殖トリガ: `ReproductionEnergyThreshold`, `AdultAge`, `DensityReproductionSlope`, `DensityReproductionPenalty`
-- 寿命/危険: `BaseDeathProbabilityPerSecond`, `AgeDeathProbabilityPerSecond`, `DensityDeathProbabilityPerNeighborPerSecond`
-- 環境フィールド: `FoodRegenPerSecond`, `FoodFromDeath`, `DangerDiffusionRate` / `DangerDecayRate`, `PheromoneDepositOnBirth`
-- フィールド更新頻度: `EnvironmentTickInterval`（既定 0.12 秒）。食料/危険/フェロモンの拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
-- 初期/最大個体数: `initial_population` 240, `max_population` 500（スナップショットサイズと近傍計算コストを抑制）。
+`--log` で指定した出力先ディレクトリは事前に作成してください。主要な調整パラメータは `src/terrarium/config.py` の `SimulationConfig` / `SpeciesConfig` / `EnvironmentConfig` / `FeedbackConfig` にまとまっています:
+
+- エネルギー上限と代謝: `energy_soft_cap`, `high_energy_metabolism_slope`, `metabolism_per_second`, `initial_energy_fraction_of_threshold`
+- 繁殖トリガ: `reproduction_energy_threshold`, `adult_age`, `density_reproduction_slope`, `density_reproduction_penalty`
+- 寿命/密度死亡: `base_death_probability_per_second`, `age_death_probability_per_second`, `density_death_probability_per_neighbor_per_second`
+- 環境フィールド: `food_regen_per_second`, `food_from_death`, `danger_diffusion_rate` / `danger_decay_rate`, `pheromone_deposit_on_birth`
+- フィールド更新頻度: `environment_tick_interval`（既定 0.12 秒）。食料/危険/フェロモン等の拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
+- 初期/最大個体数: `initial_population`（既定 200）, `max_population`（既定 1000）
 - 境界バイアス: `boundary_margin` 内では `boundary_avoidance_weight` で内側へ押し戻し、`boundary_turn_weight` で進行方向を内向きに寄せ、反射境界と併用して滑らかに折り返します。
-- ランダム歩行の更新周期: `wander_refresh_seconds`（SpeciesConfig, 既定 0.12 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
-- 孤立時の再コロニー化: 近距離の味方が一定秒数見つからない場合は `group_switch_chance` で近傍多数派へ乗り換え、閾値を満たさなければ `group_detach_new_group_chance` で新グループを立ち上げ、それも外れれば一旦未所属に戻ります。
-- グループ形成・分離: `GroupFormationWarmupSeconds`, `GroupFormationChance`, `GroupAdoptionChance`, `GroupSplitChance` に加え、近傍の同グループ人数に比例して分裂確率を上乗せする `GroupSplitSizeBonusPerNeighbor` と上限 `GroupSplitChanceMax`、サイズ起因ストレス係数 `GroupSplitSizeStressWeight`、分裂時に巻き込む仲間数 `GroupSplitRecruitmentCount`、分裂/合流後の多数派への再統合を一定時間抑える `GroupMergeCooldownSeconds`、味方が周囲にいるとき多数派への乗り換えを止める `GroupAdoptionGuardMinAllies` など（初期グループ数は 0）
-- グループ内の繁殖抑制: `GroupReproductionPenaltyPerAlly`（同グループ近傍1人あたりの繁殖率低下量）と `GroupReproductionMinFactor`（下限）。大きなグループに属しているほど個体の繁殖確率が下がり、コロニーサイズの自律分散を促します。
+- ランダム歩行の更新周期: `wander_refresh_seconds`（既定 0.12 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
+- 近距離の押し返し: `personal_space_radius`, `personal_space_weight`, `min_separation_distance`, `min_separation_weight`
+- 孤立時の再コロニー化: 近距離の味方が一定秒数見つからない場合は `group_switch_chance` で近傍多数派へ乗り換え、閾値を満たさなければ `group_detach_new_group_chance` で新グループを立ち上げます（外れた場合は未所属に戻る）。
+- グループ形成・分離: `group_formation_warmup_seconds`, `group_formation_chance`, `group_adoption_chance`, `group_split_chance`, `group_split_size_bonus_per_neighbor`, `group_split_chance_max`, `group_split_recruitment_count`, `group_merge_cooldown_seconds`, `group_adoption_guard_min_allies` など
+- グループ内の繁殖抑制: `group_reproduction_penalty_per_ally`（同グループ近傍1人あたりの繁殖率低下量）と `group_reproduction_min_factor`（下限）
+- 拠点（group base）への弱い引力: `group_base_attraction_weight`, `group_base_dead_zone`, `group_base_soft_radius`
 - 群れ間距離/結束: `ally_cohesion_weight`, `ally_separation_weight`, `other_group_separation_weight`, `other_group_avoid_radius`, `other_group_avoid_weight`（同グループは密集、異グループは早めに距離を取る調整用）
 
 ---
@@ -159,7 +166,7 @@ npm run test:js
 
 `EnvironmentGrid` はセル毎に `food`・`pheromone`（グループ別）・`danger` の 3 スカラーフィールドを持ち、毎ステップで減衰と隣接セルへの拡散を行います。
 
-- `food`: パッチ定義で初期化され、時間経過で再生・拡散し、消費や死亡で追加されます。`World.Step` の Forage 行動は `food` 勾配を優先。
+- `food`: パッチ定義で初期化され、時間経過で再生・拡散し、消費や死亡で追加されます。`AgentState.SEEKING_FOOD` では `food` 勾配を優先します。
 - `pheromone`: 繁殖成功地点で自グループのフェロモンを撒き、グループ固有の濃度勾配が Cohesion に寄与します。拡散はワールド境界にクランプされ、`pheromone_decay_rate` > 0（デフォルト 0.05）で長時間走行時もフィールドサイズが暴走しません。
 - `danger`: 敵接近や危険サインで蓄積され、勾配や局所濃度が高いセルではエージェントが Flee 行動を選好します。
 
