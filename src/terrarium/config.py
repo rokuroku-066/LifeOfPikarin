@@ -12,8 +12,8 @@ class SpeciesConfig:
     base_speed: float = 6.0
     max_acceleration: float = 20.0
     vision_radius: float = 5.0
-    metabolism_per_second: float = 0.85
-    birth_energy_cost: float = 10.0
+    metabolism_per_second: float = 0.75
+    birth_energy_cost: float = 2.0
     reproduction_energy_threshold: float = 14.0
     adult_age: float = 20.0
     initial_age_min: float = 0.0
@@ -21,7 +21,7 @@ class SpeciesConfig:
     max_age: float = 80.0
     wander_jitter: float = 0.25
     wander_refresh_seconds: float = 0.12
-    initial_energy_fraction_of_threshold: float = 0.8
+    initial_energy_fraction_of_threshold: float = 0.95
     energy_soft_cap: float = 16.0
     high_energy_metabolism_slope: float = 0.04
 
@@ -37,12 +37,12 @@ class ResourcePatchConfig:
 
 @dataclass
 class EnvironmentConfig:
-    food_per_cell: float = 6.0
-    food_regen_per_second: float = 0.35
-    food_consumption_rate: float = 5.0
+    food_per_cell: float = 10.0
+    food_regen_per_second: float = 0.8
+    food_consumption_rate: float = 6.0
     food_diffusion_rate: float = 0.1
     food_decay_rate: float = 0.0
-    food_from_death: float = 3.0
+    food_from_death: float = 10.0
     resource_patches: List[ResourcePatchConfig] = field(default_factory=list)
     danger_diffusion_rate: float = 2.0
     danger_decay_rate: float = 1.0
@@ -65,37 +65,37 @@ class FeedbackConfig:
     base_death_probability_per_second: float = 0.0006
     age_death_probability_per_second: float = 0.00018
     density_death_probability_per_neighbor_per_second: float = 0.00008
-    group_formation_warmup_seconds: float = 3.0
-    group_formation_neighbor_threshold: int = 3
-    group_formation_chance: float = 0.05
-    group_adoption_neighbor_threshold: int = 3
-    group_adoption_chance: float = 0.1
-    group_adoption_small_group_bonus: float = 1.2
-    group_food_neighbor_threshold: int = 4
-    group_food_spawn_chance: float = 0.5
-    group_food_spawn_amount: float = 3.0
+    group_formation_warmup_seconds: float = 0.0
+    group_formation_neighbor_threshold: int = 10
+    group_formation_chance: float = 0.02
+    group_adoption_neighbor_threshold: int = 2
+    group_adoption_chance: float = 0.2
+    group_adoption_small_group_bonus: float = 0
+    group_food_neighbor_threshold: int = 8
+    group_food_spawn_chance: float = 0.1
+    group_food_spawn_amount: float = 2.0
     group_split_neighbor_threshold: int = 5
-    group_split_chance: float = 0.02
+    group_split_chance: float = 0.01
     group_split_size_bonus_per_neighbor: float = 0.01
     group_split_chance_max: float = 0.15
     group_split_size_stress_weight: float = 0.001
     group_split_recruitment_count: int = 3
-    group_split_new_group_chance: float = 0.8
+    group_split_new_group_chance: float = 0.2
     group_split_stress_threshold: float = 0.1
-    group_merge_cooldown_seconds: float = 3.0
+    group_merge_cooldown_seconds: float = 1.0
     group_adoption_guard_min_allies: int = 2
     group_reproduction_penalty_per_ally: float = 0.02
     group_reproduction_min_factor: float = 0.1
-    group_birth_seed_chance: float = 0.45
-    group_mutation_chance: float = 0.14
+    group_birth_seed_chance: float = 0.03
+    group_mutation_chance: float = 0.005
     personal_space_radius: float = 1.1
     personal_space_weight: float = 2.2
     group_cohesion_radius: float = 6.0
     group_detach_radius: float = 3.0
     group_detach_close_neighbor_threshold: int = 2
     group_detach_after_seconds: float = 4.0
-    group_switch_chance: float = 0.25
-    group_detach_new_group_chance: float = 0.6
+    group_switch_chance: float = 0.4
+    group_detach_new_group_chance: float = 0.01
     group_cohesion_weight: float = 3.5
     ally_cohesion_weight: float = 1.6
     ally_separation_weight: float = 0.4
@@ -108,8 +108,8 @@ class FeedbackConfig:
 class SimulationConfig:
     time_step: float = 1.0 / 50.0
     environment_tick_interval: float = 0.12
-    initial_population: int = 100
-    max_population: int = 800
+    initial_population: int = 200
+    max_population: int = 1000
     world_size: float = 100.0
     boundary_margin: float = 10.0
     boundary_avoidance_weight: float = 1.6

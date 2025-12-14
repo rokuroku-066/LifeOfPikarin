@@ -73,6 +73,8 @@ const targetFps = 45;
 const minFrameInterval = 1000 / targetFps;
 let lastRenderTime = 0;
 let lastRenderMs = 0;
+let resizeObserver = null;
+let headerObserver = null;
 
 function setConnectionStatus(state, label) {
   if (!connectionBadge) return;
@@ -158,36 +160,34 @@ function updateLayoutMetrics() {
 }
 
 function measureContainer() {
-  const { width, height } = container.getBoundingClientRect();
+  const width = Math.max(container.clientWidth ?? 0, 1);
+  const height = Math.max(container.clientHeight ?? 0, 1);
   return {
-    width: Math.max(width, 1),
-    height: Math.max(height, 1),
+    width,
+    height,
   };
 }
 
 function computeViewports() {
   const { width, height } = measureContainer();
-  // Make the left (top-down) view as close to square as possible while
-  // consuming available height; avoid stretching when fullscreen sizing changes.
-  const desiredLeftWidth = Math.min(width, height);
-  const unclampedLeft = Math.min(desiredLeftWidth, width * 0.68);
-  const leftWidth = Math.round(Math.max(unclampedLeft, width * 0.45));
-  const dynamicLeftSplit = leftWidth / width;
-  document.documentElement.style.setProperty('--left-split', `${dynamicLeftSplit * 100}%`);
-  document.documentElement.style.setProperty('--left-split-px', `${leftWidth}px`);
+  const clampedLeftWidth = Math.min(Math.max(Math.round(width * baseLeftSplitRatio), 1), Math.max(width - 1, 1));
+  const clampedTopHeight = Math.min(Math.max(Math.round(height * rightRowSplit), 1), Math.max(height - 1, 1));
+  const rightWidth = Math.max(width - clampedLeftWidth, 1);
+  const bottomHeight = Math.max(height - clampedTopHeight, 1);
 
-  const rightWidth = Math.max(Math.round(width - leftWidth), 1);
-  const rightTopHeight = Math.max(Math.round(height * rightRowSplit), 1);
-  const rightBottomHeight = Math.max(Math.round(height - rightTopHeight), 1);
-  document.documentElement.style.setProperty('--right-row-split-px', `${rightTopHeight}px`);
+  document.documentElement.style.setProperty('--left-split', `${baseLeftSplitRatio * 100}%`);
+  document.documentElement.style.setProperty('--left-split-px', `${clampedLeftWidth}px`);
+  document.documentElement.style.setProperty('--right-row-split', `${rightRowSplit * 100}%`);
+  document.documentElement.style.setProperty('--right-row-split-px', `${clampedTopHeight}px`);
 
   return {
-    full: { width, height },
-    topDown: { x: 0, y: 0, width: leftWidth, height },
-    angle: { x: leftWidth, y: height - rightTopHeight, width: rightWidth, height: rightTopHeight },
-    pov: { x: leftWidth, y: 0, width: rightWidth, height: rightBottomHeight },
+    full: { x: 0, y: 0, width, height },
+    topDown: { x: 0, y: 0, width: clampedLeftWidth, height },
+    angle: { x: clampedLeftWidth, y: 0, width: rightWidth, height: clampedTopHeight },
+    pov: { x: clampedLeftWidth, y: clampedTopHeight, width: rightWidth, height: bottomHeight },
   };
 }
+
 
 function initThree() {
   scene = new THREE.Scene();
@@ -199,7 +199,7 @@ function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true });
   const pixelRatio = Math.min(window.devicePixelRatio ?? 1, 1.3);
   renderer.setPixelRatio(pixelRatio);
-  renderer.setSize(width, height);
+  renderer.setSize(width, height, false);
   renderer.autoClear = false;
   renderer.setScissorTest(true);
   renderer.shadowMap.enabled = false;
@@ -251,6 +251,7 @@ function initThree() {
     layoutDirty = true;
     updateLayoutMetrics();
   });
+  watchResize();
 
   requestAnimationFrame(animate);
 }
@@ -258,6 +259,7 @@ function initThree() {
 function ensureLayout() {
   if (!renderer) return;
   if (!layoutDirty) return;
+  updateLayoutMetrics();
   viewports = computeViewports();
   renderer.setSize(viewports.full.width, viewports.full.height, false);
   setTopCameraProjection(viewports.topDown);
@@ -302,6 +304,39 @@ function animate(now) {
   }
   lastRenderMs = performance.now() - frameStart;
   adjustPixelRatioIfNeeded();
+}
+
+function watchResize() {
+  if (typeof ResizeObserver !== 'undefined') {
+    if (container) {
+      resizeObserver?.disconnect();
+      resizeObserver = new ResizeObserver(() => {
+        layoutDirty = true;
+      });
+      resizeObserver.observe(container);
+    }
+    if (header) {
+      headerObserver?.disconnect();
+      headerObserver = new ResizeObserver(() => {
+        updateLayoutMetrics();
+        layoutDirty = true;
+      });
+      headerObserver.observe(header);
+    }
+  }
+  if (window.matchMedia) {
+    const dprQuery = `(resolution: ${window.devicePixelRatio}dppx)`;
+    const mq = window.matchMedia(dprQuery);
+    if (mq?.addEventListener) {
+      mq.addEventListener('change', () => {
+        if (renderer) {
+          const pixelRatio = Math.min(window.devicePixelRatio ?? 1, 1.3);
+          renderer.setPixelRatio(pixelRatio);
+        }
+        layoutDirty = true;
+      });
+    }
+  }
 }
 
 function connect() {
@@ -529,10 +564,18 @@ function adjustPixelRatioIfNeeded() {
 function renderViews(trackedPose) {
   if (!renderer || !scene || !viewports) return;
 
+  const fullViewport = viewports.full;
+  const fullHeight = fullViewport.height;
+  const toGlCoords = (vp) => {
+    // three.js viewports/scissors use bottom-left origin; convert from top-left.
+    const glY = Math.max(fullHeight - (vp.y + vp.height), 0);
+    return { x: vp.x, y: glY, width: vp.width, height: vp.height };
+  };
+
   renderer.setScissorTest(true);
   renderer.autoClear = false;
-  renderer.setViewport(0, 0, viewports.full.width, viewports.full.height);
-  renderer.setScissor(0, 0, viewports.full.width, viewports.full.height);
+  renderer.setViewport(fullViewport.x, fullViewport.y, fullViewport.width, fullViewport.height);
+  renderer.setScissor(fullViewport.x, fullViewport.y, fullViewport.width, fullViewport.height);
   renderer.clear();
 
   const views = [
@@ -554,8 +597,9 @@ function renderViews(trackedPose) {
   }
 
   for (const view of views) {
-    renderer.setViewport(view.viewport.x, view.viewport.y, view.viewport.width, view.viewport.height);
-    renderer.setScissor(view.viewport.x, view.viewport.y, view.viewport.width, view.viewport.height);
+    const scaled = toGlCoords(view.viewport);
+    renderer.setViewport(scaled.x, scaled.y, scaled.width, scaled.height);
+    renderer.setScissor(scaled.x, scaled.y, scaled.width, scaled.height);
     renderer.clearDepth();
     renderer.render(scene, view.camera);
   }
