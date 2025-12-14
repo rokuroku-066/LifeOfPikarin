@@ -47,9 +47,6 @@ class EnvironmentConfig:
     food_regen_noise_interval_seconds: float = 30.0
     food_regen_noise_smooth_seconds: float = 10.0
     resource_patches: List[ResourcePatchConfig] = field(default_factory=list)
-    danger_diffusion_rate: float = 2.0
-    danger_decay_rate: float = 1.0
-    danger_pulse_on_flee: float = 1.0
     pheromone_diffusion_rate: float = 0.3
     pheromone_decay_rate: float = 0.05
     pheromone_deposit_on_birth: float = 4.0

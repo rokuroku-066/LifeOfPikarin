@@ -28,14 +28,10 @@ class EnvironmentGrid:
         self._food_decay_rate = config.food_decay_rate
         self._pheromone_diffusion_rate = config.pheromone_diffusion_rate
         self._pheromone_decay_rate = config.pheromone_decay_rate
-        self._danger_diffusion_rate = config.danger_diffusion_rate
-        self._danger_decay_rate = config.danger_decay_rate
         self._patches: Iterable[ResourcePatchConfig] = config.resource_patches or []
 
         self._food_cells: Dict[Tuple[int, int], FoodCell] = {}
         self._food_buffer: Dict[Tuple[int, int], float] = {}
-        self._danger_field: Dict[Tuple[int, int], float] = {}
-        self._danger_buffer: Dict[Tuple[int, int], float] = {}
         self._pheromone_field: Dict[Tuple[int, int, int], float] = {}
         self._pheromone_buffer: Dict[Tuple[int, int, int], float] = {}
         self._food_regen_multiplier = 1.0
@@ -45,8 +41,6 @@ class EnvironmentGrid:
     def reset(self) -> None:
         self._food_cells.clear()
         self._food_buffer.clear()
-        self._danger_field.clear()
-        self._danger_buffer.clear()
         self._pheromone_field.clear()
         self._pheromone_buffer.clear()
         self._food_regen_multiplier = 1.0
@@ -98,13 +92,6 @@ class EnvironmentGrid:
         cell.value = min(cell.max, cell.value + amount)
         self._food_cells[key] = cell
 
-    def sample_danger(self, position: Vector2) -> float:
-        return self._danger_field.get(self._cell_key(position), 0.0)
-
-    def add_danger(self, position: Vector2, amount: float) -> None:
-        key = self._cell_key(position)
-        self._danger_field[key] = self._danger_field.get(key, 0.0) + amount
-
     def sample_pheromone(self, position: Vector2, group_id: int) -> float:
         field_key = (*self._cell_key(position), group_id)
         return self._pheromone_field.get(field_key, 0.0)
@@ -117,8 +104,6 @@ class EnvironmentGrid:
         self._sanitize_food_keys()
         self._regen_food(delta_time)
         self._diffuse_food(delta_time)
-        if self._danger_diffusion_rate > 0 or self._danger_decay_rate > 0:
-            self._diffuse_field(self._danger_field, self._danger_buffer, self._danger_diffusion_rate, self._danger_decay_rate, delta_time)
         if self._pheromone_diffusion_rate > 0 or self._pheromone_decay_rate > 0:
             self._diffuse_field(self._pheromone_field, self._pheromone_buffer, self._pheromone_diffusion_rate, self._pheromone_decay_rate, delta_time)
 
