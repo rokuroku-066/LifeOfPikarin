@@ -38,11 +38,14 @@ class ResourcePatchConfig:
 @dataclass
 class EnvironmentConfig:
     food_per_cell: float = 10.0
-    food_regen_per_second: float = 0.8
+    food_regen_per_second: float = 0.85
     food_consumption_rate: float = 6.0
     food_diffusion_rate: float = 0.1
     food_decay_rate: float = 0.0
     food_from_death: float = 10.0
+    food_regen_noise_amplitude: float = 0.9
+    food_regen_noise_interval_seconds: float = 30.0
+    food_regen_noise_smooth_seconds: float = 10.0
     resource_patches: List[ResourcePatchConfig] = field(default_factory=list)
     danger_diffusion_rate: float = 2.0
     danger_decay_rate: float = 1.0

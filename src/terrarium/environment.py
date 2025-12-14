@@ -43,6 +43,7 @@ class EnvironmentGrid:
         self._pheromone_buffer: Dict[Tuple[int, int, int], float] = {}
         self._group_food_field: Dict[Tuple[int, int, int], float] = {}
         self._group_food_buffer: Dict[Tuple[int, int, int], float] = {}
+        self._food_regen_multiplier = 1.0
 
         self._initialize_patches()
 
@@ -55,7 +56,15 @@ class EnvironmentGrid:
         self._pheromone_buffer.clear()
         self._group_food_field.clear()
         self._group_food_buffer.clear()
+        self._food_regen_multiplier = 1.0
         self._initialize_patches()
+
+    @property
+    def food_regen_multiplier(self) -> float:
+        return self._food_regen_multiplier
+
+    def set_food_regen_multiplier(self, multiplier: float) -> None:
+        self._food_regen_multiplier = max(0.0, float(multiplier))
 
     def _sanitize_food_keys(self) -> None:
         if not self._food_cells:
@@ -152,6 +161,7 @@ class EnvironmentGrid:
             self._diffuse_field(self._pheromone_field, self._pheromone_buffer, self._pheromone_diffusion_rate, self._pheromone_decay_rate, delta_time)
 
     def _regen_food(self, delta_time: float) -> None:
+        multiplier = self._food_regen_multiplier
         for key, cell in list(self._food_cells.items()):
             clamped_key = (
                 max(0, min(self._max_index - 1, key[0])),
@@ -160,7 +170,7 @@ class EnvironmentGrid:
             if clamped_key != key:
                 self._food_cells.pop(key, None)
                 key = clamped_key
-            cell.value = min(cell.max, cell.value + cell.regen_per_second * delta_time)
+            cell.value = min(cell.max, cell.value + cell.regen_per_second * multiplier * delta_time)
             self._food_cells[key] = cell
 
     def _diffuse_food(self, delta_time: float) -> None:

@@ -460,6 +460,7 @@ Guideless ALife モデルのように、事前の適応度関数を決めず、�
 * **資源ダイナミクス**
   * 一度食べ尽くした資源パッチはしばらく枯渇し、その間は他パッチに移動せざるを得ない。
   * 長期的には、季節変化やランダムイベントで資源配置をわずかに揺らすことで、コロニーが固定しすぎないようにする。
+  * （実装例）決定論的な「気候ノイズ」で食料再生をゆっくり揺らす：`EnvironmentConfig.food_regen_noise_amplitude` / `food_regen_noise_interval_seconds` / `food_regen_noise_smooth_seconds`
 
 ## 6-2. 想定リスクと設計上の対策（要約）
 

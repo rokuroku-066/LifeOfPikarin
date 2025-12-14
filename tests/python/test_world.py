@@ -26,6 +26,47 @@ def test_deterministic_steps():
     assert result_a == result_b
 
 
+def test_food_regen_noise_is_deterministic_and_bounded():
+    environment = EnvironmentConfig(
+        food_per_cell=0.0,
+        food_regen_per_second=0.0,
+        food_consumption_rate=0.0,
+        food_regen_noise_amplitude=0.25,
+        food_regen_noise_interval_seconds=2.0,
+        food_regen_noise_smooth_seconds=0.0,
+    )
+    config = SimulationConfig(
+        seed=4242,
+        time_step=1.0,
+        environment_tick_interval=0.0,
+        initial_population=0,
+        environment=environment,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+        ),
+    )
+
+    def run_regen_multipliers(cfg: SimulationConfig, steps: int) -> list[float]:
+        world = World(cfg)
+        multipliers: list[float] = []
+        for tick in range(steps):
+            world.step(tick)
+            multipliers.append(world._environment.food_regen_multiplier)  # type: ignore[attr-defined]
+        return multipliers
+
+    multipliers_a = run_regen_multipliers(config, 20)
+    config_b = SimulationConfig(**{**config.__dict__})
+    multipliers_b = run_regen_multipliers(config_b, 20)
+
+    assert multipliers_a == multipliers_b
+    assert len({round(m, 6) for m in multipliers_a}) > 1
+    assert all(0.75 <= m <= 1.25 for m in multipliers_a)
+
+
 def test_snapshot_contains_metadata_and_agent_signals():
     config = SimulationConfig(
         seed=7,

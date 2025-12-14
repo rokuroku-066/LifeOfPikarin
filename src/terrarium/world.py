@@ -13,6 +13,11 @@ from .rng import DeterministicRng
 from .spatial_grid import SpatialGrid
 
 ZERO = Vector2()
+_CLIMATE_RNG_SALT = 0xC0A1F00D5EED1234
+
+
+def _derive_stream_seed(seed: int, salt: int) -> int:
+    return (int(seed) ^ int(salt)) & 0xFFFFFFFFFFFFFFFF
 
 
 def _safe_normalize(vector: Vector2) -> Vector2:
@@ -80,6 +85,7 @@ class World:
     def __init__(self, config: SimulationConfig):
         self._config = config
         self._rng = DeterministicRng(config.seed)
+        self._climate_rng = DeterministicRng(_derive_stream_seed(config.seed, _CLIMATE_RNG_SALT))
         self._grid = SpatialGrid(config.cell_size)
         self._environment = EnvironmentGrid(config.cell_size, config.environment, config.world_size)
         self._agents: List[Agent] = []
@@ -99,6 +105,9 @@ class World:
         self._next_group_id = 0
         self._metrics: List[TickMetrics] = []
         self._environment_accumulator = 0.0
+        self._food_regen_noise_multiplier = 1.0
+        self._food_regen_noise_target = 1.0
+        self._food_regen_noise_time_to_next_sample = 0.0
         self._bootstrap_population()
 
     @property
@@ -123,11 +132,15 @@ class World:
         self._pending_group_food.clear()
         self._group_sizes.clear()
         self._rng.reset()
+        self._climate_rng.reset()
         self._id_to_index.clear()
         self._metrics.clear()
         self._next_id = 0
         self._next_group_id = 0
         self._environment_accumulator = 0.0
+        self._food_regen_noise_multiplier = 1.0
+        self._food_regen_noise_target = 1.0
+        self._food_regen_noise_time_to_next_sample = 0.0
         self._bootstrap_population()
 
     def step(self, tick: int) -> TickMetrics:
@@ -726,8 +739,41 @@ class World:
         while self._environment_accumulator >= env_dt:
             self._environment.prune_pheromones(active_groups)
             self._environment.prune_group_food(active_groups)
+            self._environment.set_food_regen_multiplier(self._update_food_regen_noise(env_dt))
             self._environment.tick(env_dt)
             self._environment_accumulator -= env_dt
+
+    def _update_food_regen_noise(self, env_dt: float) -> float:
+        config = self._config.environment
+        amplitude = max(0.0, float(config.food_regen_noise_amplitude))
+        interval = float(config.food_regen_noise_interval_seconds)
+        smooth = max(0.0, float(config.food_regen_noise_smooth_seconds))
+
+        if amplitude <= 1e-9 or interval <= 1e-6:
+            self._food_regen_noise_multiplier = 1.0
+            self._food_regen_noise_target = 1.0
+            self._food_regen_noise_time_to_next_sample = 0.0
+            return self._food_regen_noise_multiplier
+
+        low = max(0.0, 1.0 - amplitude)
+        high = 1.0 + amplitude
+
+        if self._food_regen_noise_time_to_next_sample <= 0.0:
+            self._food_regen_noise_time_to_next_sample = interval
+
+        self._food_regen_noise_time_to_next_sample -= env_dt
+        while self._food_regen_noise_time_to_next_sample <= 0.0:
+            self._food_regen_noise_target = self._climate_rng.next_range(low, high)
+            self._food_regen_noise_time_to_next_sample += interval
+            if smooth <= 1e-6:
+                self._food_regen_noise_multiplier = self._food_regen_noise_target
+
+        if smooth > 1e-6:
+            alpha = 1.0 - math.exp(-env_dt / smooth)
+            self._food_regen_noise_multiplier += (self._food_regen_noise_target - self._food_regen_noise_multiplier) * alpha
+
+        self._food_regen_noise_multiplier = max(low, min(high, self._food_regen_noise_multiplier))
+        return self._food_regen_noise_multiplier
 
     def _apply_life_cycle(self, agent: Agent, neighbor_count: int, same_group_neighbors: int, can_create_groups: bool) -> int:
         dt = self._config.time_step
