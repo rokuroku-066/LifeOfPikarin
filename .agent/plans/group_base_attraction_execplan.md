@@ -13,17 +13,18 @@ Additionally, reduce visual/physical overlap by strengthening very-close-range r
 ## Progress
 
 - [x] (2025-12-14 00:00Z) Identify current group creation paths and steering forces in `src/terrarium/world.py`.
-- [ ] (2025-12-14 00:00Z) Add config knobs for base attraction and minimum separation in `src/terrarium/config.py`.
-- [ ] (2025-12-14 00:00Z) Implement group base storage + pruning in `src/terrarium/world.py`.
-- [ ] (2025-12-14 00:00Z) Add base attraction term to steering in `src/terrarium/world.py`.
-- [ ] (2025-12-14 00:00Z) Strengthen close-range repulsion (no-overlap) in `src/terrarium/world.py` without extra neighbor passes.
-- [ ] (2025-12-14 00:00Z) Update tests in `tests/python/test_world.py` to cover base anchoring + attraction + determinism.
-- [ ] (2025-12-14 00:00Z) Update `docs/DESIGN.md` to describe the new “group base” mechanic and separation tweak.
-- [ ] (2025-12-14 00:00Z) Run `python -m pytest tests\\python` and a deterministic headless smoke run.
+- [x] (2025-12-14 00:00Z) Add config knobs for base attraction and minimum separation in `src/terrarium/config.py`.
+- [x] (2025-12-14 00:00Z) Implement group base storage + pruning in `src/terrarium/world.py`.
+- [x] (2025-12-14 00:00Z) Add base attraction term to steering in `src/terrarium/world.py`.
+- [x] (2025-12-14 00:00Z) Strengthen close-range repulsion (no-overlap) in `src/terrarium/world.py` without extra neighbor passes.
+- [x] (2025-12-14 00:00Z) Update tests in `tests/python/test_world.py` to cover base anchoring + attraction + determinism.
+- [x] (2025-12-14 00:00Z) Update `docs/DESIGN.md` to describe the new “group base” mechanic and separation tweak.
+- [x] (2025-12-14 00:00Z) Run `python -m pytest tests\\python` and a deterministic headless smoke run.
 
 ## Surprises & Discoveries
 
-None yet.
+- The headless CSV includes a wall-clock timing column (`tick_ms`), so comparisons across runs should use `--deterministic-log` (or ignore that column).
+- The output directory for `--log` must already exist (e.g., create `artifacts/` before writing logs).
 
 ## Decision Log
 
@@ -37,7 +38,14 @@ None yet.
 
 ## Outcomes & Retrospective
 
-Pending.
+- Added group base anchoring: first group creation position is stored as `World._group_bases[group_id]` and pruned when the group disappears.
+- Added base attraction steering via `World._group_base_attraction()` with a dead-zone and smooth falloff inside a soft radius.
+- Added a minimum separation term in `World._separation()` to discourage sustained overlap without adding extra neighbor passes.
+- Added tests in `tests/python/test_world.py`:
+  - `test_group_base_registered_on_group_formation_point`
+  - `test_group_base_attraction_pulls_toward_base`
+  - `test_min_separation_term_activates_when_too_close`
+- Updated `docs/DESIGN.md` to document the base and separation knobs.
 
 ## Context and Orientation
 
@@ -103,8 +111,8 @@ From repo root (`C:\\LifeOfPikarin`):
 
 2) Deterministic smoke:
 
-    python -m terrarium.headless --steps 5000 --seed 42 --log artifacts\\metrics_group_base.csv
-    python -m terrarium.headless --steps 5000 --seed 42 --log artifacts\\metrics_group_base_2.csv
+    python -m terrarium.headless --steps 5000 --seed 42 --deterministic-log --log artifacts\\metrics_group_base_det.csv
+    python -m terrarium.headless --steps 5000 --seed 42 --deterministic-log --log artifacts\\metrics_group_base_det_2.csv
 
 Expected: the two CSVs match row-for-row.
 
@@ -122,11 +130,12 @@ Expected: the two CSVs match row-for-row.
 
 ## Artifacts and Notes
 
-None yet.
+- Suggested deterministic logs:
+  - `artifacts\\metrics_group_base_det.csv`
+  - `artifacts\\metrics_group_base_det_2.csv`
 
 ## Interfaces and Dependencies
 
 - Python 3.11+
 - `pytest` for unit tests
 - `pygame` for `Vector2`
-

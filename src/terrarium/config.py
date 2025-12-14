@@ -13,7 +13,7 @@ class SpeciesConfig:
     max_acceleration: float = 20.0
     vision_radius: float = 5.0
     metabolism_per_second: float = 0.75
-    birth_energy_cost: float = 2.0
+    birth_energy_cost: float = 1.0
     reproduction_energy_threshold: float = 14.0
     adult_age: float = 20.0
     initial_age_min: float = 0.0
@@ -53,9 +53,6 @@ class EnvironmentConfig:
     pheromone_diffusion_rate: float = 0.3
     pheromone_decay_rate: float = 0.05
     pheromone_deposit_on_birth: float = 4.0
-    group_food_max_per_cell: float = 8.0
-    group_food_decay_rate: float = 0.2
-    group_food_diffusion_rate: float = 0.05
 
 
 @dataclass
@@ -73,10 +70,7 @@ class FeedbackConfig:
     group_formation_chance: float = 0.02
     group_adoption_neighbor_threshold: int = 2
     group_adoption_chance: float = 0.2
-    group_adoption_small_group_bonus: float = 0
-    group_food_neighbor_threshold: int = 8
-    group_food_spawn_chance: float = 0.1
-    group_food_spawn_amount: float = 2.0
+    group_adoption_small_group_bonus: float = 0.01
     group_split_neighbor_threshold: int = 5
     group_split_chance: float = 0.01
     group_split_size_bonus_per_neighbor: float = 0.01

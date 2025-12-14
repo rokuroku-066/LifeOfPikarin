@@ -4,7 +4,7 @@ This ExecPlan is a living document. Keep `Progress`, `Surprises & Discoveries`, 
 
 ## Purpose / Big Picture
 
-Reduce frame-time stutter by trimming per-tick allocations and unnecessary loops in the Simulation Core without changing behavior: reuse neighbor passes, skip empty-field diffusion work, and avoid copying agent lists each tick. Maintain determinism, Sim/View separation, spatial-grid locality, and long-run stability.
+Reduce frame-time stutter by trimming per-tick allocations and unnecessary loops in the Simulation Core without changing behavior: reuse neighbor passes and avoid copying agent lists each tick. Maintain determinism, Sim/View separation, spatial-grid locality, and long-run stability.
 
 ## Progress
 
@@ -19,16 +19,13 @@ Reduce frame-time stutter by trimming per-tick allocations and unnecessary loops
 
 ## Decision Log
 
-- Decision: Eliminate per-step agent list copy and merge same-group/cluster neighbor counting into a single pass before group membership updates.
+- Decision: Eliminate per-step agent list copy and merge same-group neighbor counting into a single pass before group membership updates.
   Rationale: Cuts per-tick allocations and duplicate iteration while preserving existing behavior (counts taken before membership changes).
-  Date/Author: 2025-12-14 / Codex
-- Decision: Short-circuit group-food diffusion when no clan food exists.
-  Rationale: Avoids needless dict churn each environment tick, reducing stutter when clan-food feature is unused.
   Date/Author: 2025-12-14 / Codex
 
 ## Outcomes & Retrospective
 
-- Per-tick allocations reduced (no agent list copy; combined neighbor counting). Group-food diffusion now short-circuits when empty, trimming idle work. All tests pass; behavior remains deterministic, with group-food spawn still using post-membership group IDs when they change (recomputed only on change).
+- Per-tick allocations reduced (no agent list copy; combined neighbor counting). All tests pass; behavior remains deterministic.
 
 ## Context and Orientation
 
@@ -38,25 +35,23 @@ Reduce frame-time stutter by trimming per-tick allocations and unnecessary loops
 ## Plan of Work
 
 1) In `world.step`, stop copying the agent list each tick; iterate directly since births are queued and removals happen after the loop.
-2) Merge same-group neighbor counting and close-ally counting into one pass (reuse for reproduction penalty and clan-food spawn) to remove an extra loop.
-3) In `environment._diffuse_group_food`, early-return when no clan food is present to avoid unnecessary buffers; keep cap/decay/diffusion behavior otherwise unchanged.
-4) Run tests; if stutter persists, profile further hotspots (not in scope for this quick pass).
+2) Merge same-group neighbor counting into one pass (reuse for reproduction penalty) to remove an extra loop.
+3) Run tests; if stutter persists, profile further hotspots (not in scope for this quick pass).
 
 ## Concrete Steps
 
-- Edit `src/terrarium/world.py`: adjust main loop iteration and merge neighbor count + cluster count; keep behavior identical (counts before group changes).
-- Edit `src/terrarium/environment.py`: guard `_diffuse_group_food` with empty-field early return.
+- Edit `src/terrarium/world.py`: adjust main loop iteration and merge neighbor counting; keep behavior identical (counts before group changes).
 - Validate with `python -m pytest tests/python`.
 
 ## Validation and Acceptance
 
 - All Python tests pass.
-- No behavioral changes: group membership logic and clan-food spawning remain deterministic; energy balances unchanged.
-- Micro-stutter reduced: per-tick allocations removed, empty-field diffusion skipped (observable as lower GC/CPU in long runs).
+- No behavioral changes: group membership logic remains deterministic; energy balances unchanged.
+- Micro-stutter reduced: per-tick allocations removed (observable as lower GC/CPU in long runs).
 
 ## Idempotence and Recovery
 
-- Edits are safe to reapply; early return only bypasses work when no clan food exists.
+- Edits are safe to reapply.
 
 ## Artifacts and Notes
 
