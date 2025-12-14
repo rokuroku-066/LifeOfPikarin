@@ -23,7 +23,7 @@ After the change, the simulation remains deterministic and stable under fixed ti
 - [x] (2025-12-14 23:11Z) Update docs/tests that mention `danger`.
 - [x] (2025-12-14 23:12Z) Re-run `pytest tests/python` and confirm pass.
 - [x] (2025-12-14 23:13Z) Smoke run: `python -m terrarium.headless --steps 500 --seed 42`.
-- [ ] (2025-12-14 23:13Z) Commit + push changes to the current branch.
+- [x] (2025-12-14 23:15Z) Commit + push changes to the current branch (`20c8ff1`).
 
 ## Surprises & Discoveries
 
@@ -37,7 +37,7 @@ None yet.
 
 ## Outcomes & Retrospective
 
-Pending.
+`danger` field was fully removed (config, environment storage, world steering/deposit), and docs/tests were updated to match. The sim remains deterministic/seeded and bounded by spatial-grid neighbor queries; `pytest tests/python` passes and a headless smoke run completes.
 
 ## Context and Orientation
 
