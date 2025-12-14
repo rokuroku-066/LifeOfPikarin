@@ -40,9 +40,9 @@ const ageVisual = {
   jitterFrequency: 0.85,
 };
 
-const leftSplitRatio = 0.55;
+const baseLeftSplitRatio = 0.55;
 const rightRowSplit = 0.5;
-document.documentElement.style.setProperty('--left-split', `${leftSplitRatio * 100}%`);
+document.documentElement.style.setProperty('--left-split', `${baseLeftSplitRatio * 100}%`);
 document.documentElement.style.setProperty('--right-row-split', `${rightRowSplit * 100}%`);
 
 let socket = null;
@@ -167,10 +167,20 @@ function measureContainer() {
 
 function computeViewports() {
   const { width, height } = measureContainer();
-  const leftWidth = Math.max(width * leftSplitRatio, 1);
-  const rightWidth = Math.max(width - leftWidth, 1);
-  const rightTopHeight = Math.max(height * rightRowSplit, 1);
-  const rightBottomHeight = Math.max(height - rightTopHeight, 1);
+  // Make the left (top-down) view as close to square as possible while
+  // consuming available height; avoid stretching when fullscreen sizing changes.
+  const desiredLeftWidth = Math.min(width, height);
+  const unclampedLeft = Math.min(desiredLeftWidth, width * 0.68);
+  const leftWidth = Math.round(Math.max(unclampedLeft, width * 0.45));
+  const dynamicLeftSplit = leftWidth / width;
+  document.documentElement.style.setProperty('--left-split', `${dynamicLeftSplit * 100}%`);
+  document.documentElement.style.setProperty('--left-split-px', `${leftWidth}px`);
+
+  const rightWidth = Math.max(Math.round(width - leftWidth), 1);
+  const rightTopHeight = Math.max(Math.round(height * rightRowSplit), 1);
+  const rightBottomHeight = Math.max(Math.round(height - rightTopHeight), 1);
+  document.documentElement.style.setProperty('--right-row-split-px', `${rightTopHeight}px`);
+
   return {
     full: { width, height },
     topDown: { x: 0, y: 0, width: leftWidth, height },

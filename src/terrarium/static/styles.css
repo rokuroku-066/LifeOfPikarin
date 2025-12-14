@@ -2,6 +2,9 @@
   --header-height: 0px;
   --left-split: 55%;
   --right-row-split: 50%;
+  --left-split-px: 0px;
+  --right-row-split-px: 0px;
+  --page-gap: 12px;
 }
 
 body {
@@ -12,6 +15,8 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 header {
@@ -82,7 +87,7 @@ button:hover {
 main {
   width: 100%;
   display: flex;
-  padding: 12px;
+  padding: var(--page-gap);
   box-sizing: border-box;
   flex: 1 1 auto;
   height: calc(100vh - var(--header-height));
@@ -124,14 +129,14 @@ main {
   width: 1px;
   top: 0;
   bottom: 0;
-  left: var(--left-split);
+  left: var(--left-split-px);
 }
 
 #view-grid-lines .divider.horizontal {
   height: 1px;
-  left: var(--left-split);
+  left: var(--left-split-px);
   right: 0;
-  top: var(--right-row-split);
+  top: var(--right-row-split-px);
 }
 
 .view-label {
@@ -154,10 +159,10 @@ main {
 
 .view-label[data-view="angle"] {
   top: 10px;
-  left: calc(var(--left-split) + 12px);
+  left: calc(var(--left-split-px) + 12px);
 }
 
 .view-label[data-view="pov"] {
   bottom: 10px;
-  left: calc(var(--left-split) + 12px);
+  left: calc(var(--left-split-px) + 12px);
 }
