@@ -1,5 +1,10 @@
 :root {
   --header-height: 0px;
+  --left-split: 55%;
+  --right-row-split: 50%;
+  --left-split-px: 0px;
+  --right-row-split-px: 0px;
+  --page-gap: 12px;
 }
 
 body {
@@ -10,6 +15,8 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 header {
@@ -28,6 +35,42 @@ header {
   flex-wrap: wrap;
 }
 
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  letter-spacing: 0.1px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e5e5;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.status.ok {
+  background: rgba(46, 160, 67, 0.15);
+  border-color: rgba(46, 160, 67, 0.4);
+  color: #9ef0b5;
+}
+
+.status.warn {
+  background: rgba(255, 171, 0, 0.15);
+  border-color: rgba(255, 171, 0, 0.35);
+  color: #ffd891;
+}
+
+.status.error {
+  background: rgba(255, 90, 90, 0.15);
+  border-color: rgba(255, 90, 90, 0.35);
+  color: #ffb0b0;
+}
+
+.controls span {
+  font-size: 14px;
+  color: #d7d7d7;
+}
+
 button {
   background: #1f6feb;
   color: white;
@@ -44,7 +87,7 @@ button:hover {
 main {
   width: 100%;
   display: flex;
-  padding: 12px;
+  padding: var(--page-gap);
   box-sizing: border-box;
   flex: 1 1 auto;
   height: calc(100vh - var(--header-height));
@@ -58,10 +101,68 @@ main {
   border: 1px solid #333;
   border-radius: 6px;
   overflow: hidden;
+  position: relative;
 }
 
 #view-container canvas {
   display: block;
   width: 100%;
   height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+#view-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#view-grid-lines .divider {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+#view-grid-lines .divider.vertical {
+  width: 1px;
+  top: 0;
+  bottom: 0;
+  left: var(--left-split-px);
+}
+
+#view-grid-lines .divider.horizontal {
+  height: 1px;
+  left: var(--left-split-px);
+  right: 0;
+  top: var(--right-row-split-px);
+}
+
+.view-label {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: #f0f0f0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.view-label[data-view="top"] {
+  top: 10px;
+  left: 10px;
+}
+
+.view-label[data-view="angle"] {
+  top: 10px;
+  left: calc(var(--left-split-px) + 12px);
+}
+
+.view-label[data-view="pov"] {
+  bottom: 10px;
+  left: calc(var(--left-split-px) + 12px);
 }

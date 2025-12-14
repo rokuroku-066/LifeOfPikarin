@@ -26,7 +26,9 @@ Add forward-compatible snapshot signals and metadata for Phase 2 visuals while k
 
 ## Outcomes & Retrospective
 
-To be filled after implementation.
+- Snapshot payload now carries stable heading, behavior state, energy/age/size plus world metadata (world_size, sim_dt, tick_rate, seed, config_version) without touching the step loop; existing viewer continues to consume Phase 1 fields.
+- Deterministic tests in `tests/python/test_world.py` cover heading persistence when velocity is near zero and presence of metadata/agent signals; full pytest suite passes (25 tests).
+- Sim/View separation preserved: only snapshot construction changed, and long-run smoke (20k ticks, seed 42) stayed reproducible with consistent populations/groups.
 
 ## Context and Orientation
 

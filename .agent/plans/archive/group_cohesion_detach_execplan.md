@@ -30,7 +30,8 @@ Add local-density-based group cohesion and hysteresis so agents retain group mem
 
 ## Outcomes & Retrospective
 
-- Pending implementation.
+- Lonely agents now only switch when nearby majority meets `group_adoption_neighbor_threshold`; otherwise they either seed a new group via `group_detach_new_group_chance` or briefly ungroup. Added deterministic coverage in `tests/python/test_world.py::test_lonely_agent_does_not_switch_without_threshold_neighbors` and `..._switches_when_neighbor_threshold_met`; pytest (25 tests) now passes.
+- Long-run headless 20k-tick smoke (seed 42) kept population stable (final 499, births 7041/deaths 6782) with persistent colonies (groups avg last 10k = 66.17, final 46), indicating the hysteresis prevents both collapse and runaway growth while staying within SpatialGrid locality.
 
 ## Context and Orientation
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Terrarium Web Viewer</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css" onerror="this.href='styles.css'">
 </head>
 <body>
   <header>
@@ -12,13 +12,25 @@
       <button id="start">Start</button>
       <button id="stop">Pause</button>
       <button id="reset">Reset</button>
-      <label>Speed <input id="speed" type="range" min="0.2" max="3" step="0.1" value="1"></label>
+      <label>Speed <input id="speed" type="range" min="0.2" max="2" step="0.1" value="1"></label>
       <span id="tick">tick: 0</span>
       <span id="population">pop: 0</span>
+      <span id="tracked">POV: --</span>
+      <span id="connection" class="status warn">offline preview</span>
     </div>
   </header>
   <main>
-    <div id="view-container" aria-label="Three.js view"></div>
+    <div id="view-container" aria-label="Three.js view">
+      <div id="view-overlay" aria-hidden="true">
+        <div id="view-grid-lines">
+          <div class="divider vertical"></div>
+          <div class="divider horizontal"></div>
+        </div>
+        <div class="view-label" data-view="top">Top-down</div>
+        <div class="view-label" data-view="angle">Edge angle</div>
+        <div class="view-label" data-view="pov">Agent POV</div>
+      </div>
+    </div>
   </main>
   <script type="importmap">
     {
@@ -27,6 +39,6 @@
       }
     }
   </script>
-  <script type="module" src="/static/app.js"></script>
+  <script type="module" src="/static/app.js" onerror="const s=document.createElement('script');s.type='module';s.src='app.js';document.body.appendChild(s);"></script>
 </body>
 </html>

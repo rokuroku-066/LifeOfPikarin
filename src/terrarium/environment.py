@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 from pygame.math import Vector2
 
@@ -17,8 +17,10 @@ class FoodCell:
 
 
 class EnvironmentGrid:
-    def __init__(self, cell_size: float, config: EnvironmentConfig):
+    def __init__(self, cell_size: float, config: EnvironmentConfig, world_size: float):
         self._cell_size = cell_size
+        self._world_size = world_size
+        self._max_index = max(1, int(math.ceil(world_size / cell_size)))
         self._default_max_food = config.food_per_cell
         self._default_food_regen_per_second = config.food_regen_per_second
         self._default_initial_food = min(config.food_per_cell, config.food_per_cell * 0.8)
@@ -28,6 +30,9 @@ class EnvironmentGrid:
         self._pheromone_decay_rate = config.pheromone_decay_rate
         self._danger_diffusion_rate = config.danger_diffusion_rate
         self._danger_decay_rate = config.danger_decay_rate
+        self._group_food_max = config.group_food_max_per_cell
+        self._group_food_diffusion_rate = config.group_food_diffusion_rate
+        self._group_food_decay_rate = config.group_food_decay_rate
         self._patches: Iterable[ResourcePatchConfig] = config.resource_patches or []
 
         self._food_cells: Dict[Tuple[int, int], FoodCell] = {}
@@ -36,6 +41,8 @@ class EnvironmentGrid:
         self._danger_buffer: Dict[Tuple[int, int], float] = {}
         self._pheromone_field: Dict[Tuple[int, int, int], float] = {}
         self._pheromone_buffer: Dict[Tuple[int, int, int], float] = {}
+        self._group_food_field: Dict[Tuple[int, int, int], float] = {}
+        self._group_food_buffer: Dict[Tuple[int, int, int], float] = {}
 
         self._initialize_patches()
 
@@ -46,7 +53,25 @@ class EnvironmentGrid:
         self._danger_buffer.clear()
         self._pheromone_field.clear()
         self._pheromone_buffer.clear()
+        self._group_food_field.clear()
+        self._group_food_buffer.clear()
         self._initialize_patches()
+
+    def _sanitize_food_keys(self) -> None:
+        if not self._food_cells:
+            return
+        for key, cell in list(self._food_cells.items()):
+            clamped_key = (
+                max(0, min(self._max_index - 1, key[0])),
+                max(0, min(self._max_index - 1, key[1])),
+            )
+            if clamped_key != key:
+                self._food_cells.pop(key, None)
+                existing = self._food_cells.get(clamped_key)
+                if existing:
+                    existing.value = min(existing.max, existing.value + cell.value)
+                else:
+                    self._food_cells[clamped_key] = cell
 
     def sample_food(self, position: Vector2) -> float:
         key = self._cell_key(position)
@@ -71,6 +96,35 @@ class EnvironmentGrid:
         cell.value = min(cell.max, cell.value + amount)
         self._food_cells[key] = cell
 
+    def sample_group_food(self, position: Vector2, group_id: int) -> float:
+        if group_id < 0:
+            return 0.0
+        key = (*self._cell_key(position), group_id)
+        return self._group_food_field.get(key, 0.0)
+
+    def consume_group_food(self, position: Vector2, group_id: int, amount: float) -> None:
+        if group_id < 0 or amount <= 0:
+            return
+        key = (*self._cell_key(position), group_id)
+        current = self._group_food_field.get(key)
+        if current is None:
+            return
+        new_value = max(0.0, current - amount)
+        if new_value <= 1e-6:
+            self._group_food_field.pop(key, None)
+        else:
+            self._group_food_field[key] = new_value
+
+    def add_group_food(self, position: Vector2, group_id: int, amount: float) -> None:
+        if amount <= 0 or group_id < 0:
+            return
+        key = (*self._cell_key(position), group_id)
+        existing = self._group_food_field.get(key, 0.0)
+        new_value = min(self._group_food_max, existing + amount)
+        if new_value <= 0.0:
+            return
+        self._group_food_field[key] = new_value
+
     def sample_danger(self, position: Vector2) -> float:
         return self._danger_field.get(self._cell_key(position), 0.0)
 
@@ -87,8 +141,11 @@ class EnvironmentGrid:
         self._pheromone_field[key] = self._pheromone_field.get(key, 0.0) + amount
 
     def tick(self, delta_time: float) -> None:
+        self._sanitize_food_keys()
         self._regen_food(delta_time)
         self._diffuse_food(delta_time)
+        if self._group_food_diffusion_rate > 0 or self._group_food_decay_rate > 0:
+            self._diffuse_group_food(delta_time)
         if self._danger_diffusion_rate > 0 or self._danger_decay_rate > 0:
             self._diffuse_field(self._danger_field, self._danger_buffer, self._danger_diffusion_rate, self._danger_decay_rate, delta_time)
         if self._pheromone_diffusion_rate > 0 or self._pheromone_decay_rate > 0:
@@ -96,6 +153,13 @@ class EnvironmentGrid:
 
     def _regen_food(self, delta_time: float) -> None:
         for key, cell in list(self._food_cells.items()):
+            clamped_key = (
+                max(0, min(self._max_index - 1, key[0])),
+                max(0, min(self._max_index - 1, key[1])),
+            )
+            if clamped_key != key:
+                self._food_cells.pop(key, None)
+                key = clamped_key
             cell.value = min(cell.max, cell.value + cell.regen_per_second * delta_time)
             self._food_cells[key] = cell
 
@@ -129,6 +193,33 @@ class EnvironmentGrid:
             if key not in self._food_buffer and self._food_cells[key].value <= 1e-4:
                 self._food_cells.pop(key, None)
 
+    def _diffuse_group_food(self, delta_time: float) -> None:
+        if not self._group_food_field:
+            return
+        if self._group_food_diffusion_rate <= 0 and self._group_food_decay_rate <= 0:
+            return
+
+        self._group_food_buffer.clear()
+        diffusion = max(0.0, self._group_food_diffusion_rate)
+        decay = max(0.0, self._group_food_decay_rate)
+        for key, value in self._group_food_field.items():
+            if value <= 0:
+                continue
+            decayed = value * max(0.0, 1.0 - decay * delta_time)
+            spread = decayed * min(1.0, diffusion * delta_time)
+            remain = decayed - spread
+            share = spread * 0.25
+
+            self._accumulate(self._group_food_buffer, key, remain)
+            offsets = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            for ox, oy in offsets:
+                self._accumulate(self._group_food_buffer, self._add_key(key, ox, oy), share)
+
+        self._group_food_field.clear()
+        for key, value in self._group_food_buffer.items():
+            if value > 1e-5:
+                self._group_food_field[key] = min(self._group_food_max, value)
+
     def _diffuse_field(self, field: Dict[Tuple[int, ...], float], buffer: Dict[Tuple[int, ...], float], diffusion_rate: float, decay_rate: float, delta_time: float) -> None:
         buffer.clear()
         for key, value in field.items():
@@ -149,10 +240,30 @@ class EnvironmentGrid:
             if value > 1e-5:
                 field[key] = value
 
+    def prune_pheromones(self, active_groups: Set[int]) -> None:
+        if not self._pheromone_field:
+            return
+        if not active_groups:
+            self._pheromone_field.clear()
+            return
+        for key in list(self._pheromone_field.keys()):
+            if key[2] not in active_groups:
+                self._pheromone_field.pop(key, None)
+
+    def prune_group_food(self, active_groups: Set[int]) -> None:
+        if not self._group_food_field:
+            return
+        if not active_groups:
+            self._group_food_field.clear()
+            return
+        for key in list(self._group_food_field.keys()):
+            if key[2] not in active_groups:
+                self._group_food_field.pop(key, None)
+
     def _add_key(self, key: Tuple[int, ...], dx: int, dy: int) -> Tuple[int, ...]:
         key_list = list(key)
-        key_list[0] += dx
-        key_list[1] += dy
+        key_list[0] = max(0, min(self._max_index - 1, key_list[0] + dx))
+        key_list[1] = max(0, min(self._max_index - 1, key_list[1] + dy))
         return tuple(key_list)
 
     def _accumulate(self, buffer: Dict[Tuple[int, ...], float], key: Tuple[int, ...], value: float) -> None:
@@ -182,7 +293,11 @@ class EnvironmentGrid:
         return cell
 
     def _cell_key(self, position: Vector2) -> Tuple[int, int]:
-        return (int(position.x // self._cell_size), int(position.y // self._cell_size))
+        clamped_x = max(0.0, min(self._world_size, position.x))
+        clamped_y = max(0.0, min(self._world_size, position.y))
+        ix = max(0, min(self._max_index - 1, int(clamped_x // self._cell_size)))
+        iy = max(0, min(self._max_index - 1, int(clamped_y // self._cell_size)))
+        return (ix, iy)
 
     def _initialize_patches(self) -> None:
         if not self._patches:

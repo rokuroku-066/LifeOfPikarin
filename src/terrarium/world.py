@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 from pygame.math import Vector2
 
@@ -10,7 +10,7 @@ from .agent import Agent, AgentState
 from .config import SimulationConfig
 from .environment import EnvironmentGrid
 from .rng import DeterministicRng
-from .spatial_grid import GridEntry, SpatialGrid
+from .spatial_grid import SpatialGrid
 
 ZERO = Vector2()
 
@@ -81,7 +81,7 @@ class World:
         self._config = config
         self._rng = DeterministicRng(config.seed)
         self._grid = SpatialGrid(config.cell_size)
-        self._environment = EnvironmentGrid(config.cell_size, config.environment)
+        self._environment = EnvironmentGrid(config.cell_size, config.environment, config.world_size)
         self._agents: List[Agent] = []
         self._birth_queue: List[Agent] = []
         self._id_to_index: Dict[int, int] = {}
@@ -91,11 +91,14 @@ class World:
         self._pending_food: List[tuple[Vector2, float]] = []
         self._pending_danger: List[tuple[Vector2, float]] = []
         self._pending_pheromone: List[tuple[Vector2, int, float]] = []
+        self._pending_group_food: List[tuple[Vector2, int, float]] = []
         self._ungrouped_neighbors: List[Agent] = []
         self._group_counts_scratch: Dict[int, int] = {}
+        self._group_sizes: Dict[int, int] = {}
         self._next_id = 0
         self._next_group_id = 0
         self._metrics: List[TickMetrics] = []
+        self._environment_accumulator = 0.0
         self._bootstrap_population()
 
     @property
@@ -117,11 +120,14 @@ class World:
         self._pending_food.clear()
         self._pending_danger.clear()
         self._pending_pheromone.clear()
+        self._pending_group_food.clear()
+        self._group_sizes.clear()
         self._rng.reset()
         self._id_to_index.clear()
         self._metrics.clear()
         self._next_id = 0
         self._next_group_id = 0
+        self._environment_accumulator = 0.0
         self._bootstrap_population()
 
     def step(self, tick: int) -> TickMetrics:
@@ -131,28 +137,52 @@ class World:
         self._pending_food.clear()
         self._pending_danger.clear()
         self._pending_pheromone.clear()
+        self._pending_group_food.clear()
 
         sim_time = tick * self._config.time_step
         can_form_groups = sim_time >= self._config.feedback.group_formation_warmup_seconds
 
-        self._refresh_index_map()
         self._grid.clear()
+        self._group_sizes.clear()
         for agent in self._agents:
-            self._grid.insert(agent.id, agent.position)
+            if agent.group_id >= 0:
+                self._group_sizes[agent.group_id] = self._group_sizes.get(agent.group_id, 0) + 1
+            self._grid.insert(agent.id, agent.position, agent)
 
         neighbor_checks = 0
         births = 0
         deaths = 0
+        cluster_radius_sq = self._config.feedback.group_cohesion_radius * self._config.feedback.group_cohesion_radius
 
-        for i, agent in enumerate(list(self._agents)):
+        for agent in self._agents:
             if not agent.alive:
                 continue
 
-            neighbors = self._grid.get_neighbors(agent.position, self._config.species.vision_radius)
-            self._collect_neighbor_data(agent, neighbors)
+            self._grid.collect_neighbors(
+                agent.position,
+                self._config.species.vision_radius,
+                self._neighbor_agents,
+                self._neighbor_offsets,
+                exclude_id=agent.id,
+            )
             neighbor_checks += len(self._neighbor_agents)
+            same_group_neighbors = 0
+            close_allies = 0
+            original_group = agent.group_id
+            if original_group != self._UNGROUPED:
+                for other, offset in zip(self._neighbor_agents, self._neighbor_offsets):
+                    if other.group_id == original_group:
+                        same_group_neighbors += 1
+                        if cluster_radius_sq > 1e-9 and offset.length_squared() <= cluster_radius_sq:
+                            close_allies += 1
 
             self._update_group_membership(agent, self._neighbor_agents, self._neighbor_offsets, can_form_groups)
+            if agent.group_id != original_group:
+                close_allies = 0
+                if agent.group_id != self._UNGROUPED and cluster_radius_sq > 1e-9:
+                    for other, offset in zip(self._neighbor_agents, self._neighbor_offsets):
+                        if other.group_id == agent.group_id and offset.length_squared() <= cluster_radius_sq:
+                            close_allies += 1
             desired, sensed_danger = self._compute_desired_velocity(agent, self._neighbor_agents, self._neighbor_offsets)
             accel = desired - agent.velocity
             accel = _clamp_length(accel, self._config.species.max_acceleration)
@@ -167,12 +197,15 @@ class World:
             self._update_heading(agent)
             agent.age += self._config.time_step
 
-            births += self._apply_life_cycle(agent, len(self._neighbor_agents), can_form_groups)
+            births += self._apply_life_cycle(agent, len(self._neighbor_agents), same_group_neighbors, can_form_groups)
+            if agent.alive:
+                self._maybe_spawn_group_food(agent, close_allies)
             if agent.state == AgentState.FLEE or sensed_danger:
                 self._pending_danger.append((agent.position, self._config.environment.danger_pulse_on_flee))
 
+        active_groups = self._active_group_ids()
         self._apply_field_events()
-        self._environment.tick(self._config.time_step)
+        self._tick_environment(active_groups)
         self._apply_births()
         deaths += self._remove_dead()
 
@@ -216,9 +249,10 @@ class World:
                 energy=self._config.species.reproduction_energy_threshold * self._config.species.initial_energy_fraction_of_threshold,
                 age=self._sample_initial_age(),
                 state=AgentState.WANDER,
+                wander_dir=self._rng.next_unit_circle(),
+                wander_time=self._config.species.wander_refresh_seconds,
             )
             self._agents.append(agent)
-            self._id_to_index[self._next_id] = len(self._agents) - 1
             self._next_id += 1
 
     def _sample_initial_age(self) -> float:
@@ -266,22 +300,47 @@ class World:
             "importance": 1.0,
         }
 
-    def _collect_neighbor_data(self, agent: Agent, neighbors: List[GridEntry]) -> None:
-        self._neighbor_offsets.clear()
-        self._neighbor_agents.clear()
-        for entry in neighbors:
-            if entry.id == agent.id:
+    def _decay_group_cooldown(self, agent: Agent) -> None:
+        if agent.group_cooldown > 0.0:
+            agent.group_cooldown = max(0.0, agent.group_cooldown - self._config.time_step)
+
+    def _set_group(self, agent: Agent, group_id: int) -> None:
+        agent.group_id = group_id
+        agent.group_lonely_seconds = 0.0
+        if group_id == self._UNGROUPED:
+            agent.group_cooldown = 0.0
+            return
+        if self._config.feedback.group_merge_cooldown_seconds > 0.0:
+            agent.group_cooldown = max(
+                agent.group_cooldown, self._config.feedback.group_merge_cooldown_seconds
+            )
+
+    def _recruit_split_neighbors(
+        self, previous_group: int, new_group: int, neighbors: List[Agent], neighbor_offsets: List[Vector2]
+    ) -> None:
+        max_recruits = self._config.feedback.group_split_recruitment_count
+        if max_recruits <= 0 or new_group == self._UNGROUPED:
+            return
+        radius_sq = self._config.feedback.group_cohesion_radius * self._config.feedback.group_cohesion_radius
+        candidates: List[tuple[float, Agent]] = []
+        for other, offset in zip(neighbors, neighbor_offsets):
+            if other.group_id != previous_group:
                 continue
-            other = self._try_get_agent(entry.id)
-            if other is None or not other.alive:
+            dist_sq = offset.length_squared()
+            if dist_sq > radius_sq:
                 continue
-            self._neighbor_offsets.append(entry.position - agent.position)
-            self._neighbor_agents.append(other)
+            candidates.append((dist_sq, other))
+        if not candidates:
+            return
+        candidates.sort(key=lambda item: item[0])
+        for _, recruit in candidates[:max_recruits]:
+            self._set_group(recruit, new_group)
 
     def _update_group_membership(
         self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2], can_form_groups: bool
     ) -> None:
         original_group = agent.group_id
+        self._decay_group_cooldown(agent)
         self._group_counts_scratch.clear()
         self._ungrouped_neighbors.clear()
         same_group_neighbors = 0
@@ -301,10 +360,17 @@ class World:
 
         majority_group = self._UNGROUPED
         majority_count = 0
+        switch_group = self._UNGROUPED
+        switch_count = 0
         for gid, count in self._group_counts_scratch.items():
             if count > majority_count:
                 majority_group = gid
                 majority_count = count
+            if gid == agent.group_id:
+                continue
+            if count > switch_count:
+                switch_group = gid
+                switch_count = count
 
         if agent.group_id == self._UNGROUPED:
             agent.group_lonely_seconds = 0.0
@@ -314,18 +380,28 @@ class World:
             else:
                 agent.group_lonely_seconds += self._config.time_step
             if agent.group_lonely_seconds >= self._config.feedback.group_detach_after_seconds:
-                if majority_group != self._UNGROUPED and self._rng.next_float() < self._config.feedback.group_switch_chance:
-                    agent.group_id = majority_group
+                switch_threshold = max(1, self._config.feedback.group_adoption_neighbor_threshold)
+                if (
+                    switch_group != self._UNGROUPED
+                    and switch_count >= switch_threshold
+                    and self._rng.next_float() < self._config.feedback.group_switch_chance
+                ):
+                    self._set_group(agent, switch_group)
                 else:
-                    agent.group_id = self._UNGROUPED
+                    if can_form_groups and self._rng.next_float() < self._config.feedback.group_detach_new_group_chance:
+                        new_group = self._next_group_id
+                        self._next_group_id += 1
+                        self._set_group(agent, new_group)
+                    else:
+                        self._set_group(agent, self._UNGROUPED)
                 agent.group_lonely_seconds = 0.0
 
         if can_form_groups:
             self._try_form_group(agent)
             if agent.group_id == original_group:
-                self._try_adopt_group(agent, majority_group, majority_count)
+                self._try_adopt_group(agent, majority_group, majority_count, same_group_neighbors)
         if agent.group_id == original_group:
-            self._try_split_group(agent, same_group_neighbors, can_form_groups)
+            self._try_split_group(agent, same_group_neighbors, neighbors, neighbor_offsets, can_form_groups)
         self._group_counts_scratch.clear()
         self._ungrouped_neighbors.clear()
 
@@ -339,36 +415,75 @@ class World:
 
         new_group = self._next_group_id
         self._next_group_id += 1
-        self._adopt_group(agent, new_group)
+        self._set_group(agent, new_group)
         recruits = min(len(self._ungrouped_neighbors), self._config.feedback.group_formation_neighbor_threshold + 2)
         for neighbor in self._ungrouped_neighbors[:recruits]:
-            self._adopt_group(neighbor, new_group)
+            self._set_group(neighbor, new_group)
 
-    def _try_adopt_group(self, agent: Agent, majority_group: int, majority_count: int) -> None:
+    def _try_adopt_group(
+        self, agent: Agent, majority_group: int, majority_count: int, same_group_neighbors: int
+    ) -> None:
         if majority_group == self._UNGROUPED or agent.group_id == majority_group:
             return
-        if majority_count < self._config.feedback.group_adoption_neighbor_threshold:
+        if agent.group_cooldown > 0.0:
             return
-        if self._rng.next_float() < self._config.feedback.group_adoption_chance:
-            agent.group_id = majority_group
+        if agent.group_id != self._UNGROUPED and same_group_neighbors >= self._config.feedback.group_adoption_guard_min_allies:
+            return
+        target_size = self._group_sizes.get(majority_group, majority_count)
+        size_for_threshold = target_size if target_size > 0 else majority_count
+        effective_threshold = max(
+            1,
+            min(self._config.feedback.group_adoption_neighbor_threshold, max(1, size_for_threshold)),
+        )
+        if majority_count < effective_threshold:
+            return
+        base_chance = self._config.feedback.group_adoption_chance
+        small_bonus = self._config.feedback.group_adoption_small_group_bonus
+        size_for_bonus = max(1, target_size)
+        adoption_chance = min(1.0, base_chance * (1.0 + small_bonus / size_for_bonus))
+        if self._rng.next_float() < adoption_chance:
+            self._set_group(agent, majority_group)
 
-    def _try_split_group(self, agent: Agent, same_group_neighbors: int, can_form_groups: bool) -> None:
+    def _try_split_group(
+        self, agent: Agent, same_group_neighbors: int, neighbors: List[Agent], neighbor_offsets: List[Vector2], can_form_groups: bool
+    ) -> None:
         if agent.group_id == self._UNGROUPED:
             return
         if same_group_neighbors < self._config.feedback.group_split_neighbor_threshold:
             return
-        if agent.stress < self._config.feedback.group_split_stress_threshold:
+        effective_stress = agent.stress + same_group_neighbors * self._config.feedback.group_split_size_stress_weight
+        if effective_stress < self._config.feedback.group_split_stress_threshold:
             return
-        if self._rng.next_float() < self._config.feedback.group_split_chance:
+        bonus_neighbors = max(0, same_group_neighbors - self._config.feedback.group_split_neighbor_threshold)
+        size_bonus = bonus_neighbors * self._config.feedback.group_split_size_bonus_per_neighbor
+        base_chance = self._config.feedback.group_split_chance
+        split_chance = base_chance + size_bonus
+        split_chance = min(self._config.feedback.group_split_chance_max, split_chance, 1.0)
+        if split_chance <= 0.0:
+            return
+        if self._rng.next_float() < split_chance:
+            previous_group = agent.group_id
+            target_group = self._UNGROUPED
             if can_form_groups and self._rng.next_float() < self._config.feedback.group_split_new_group_chance:
-                agent.group_id = self._next_group_id
+                target_group = self._next_group_id
                 self._next_group_id += 1
-            else:
-                agent.group_id = self._UNGROUPED
+            self._set_group(agent, target_group)
+            if target_group != self._UNGROUPED and can_form_groups:
+                self._recruit_split_neighbors(previous_group, target_group, neighbors, neighbor_offsets)
 
-    @staticmethod
-    def _adopt_group(agent: Agent, group_id: int) -> None:
-        agent.group_id = group_id
+    def _maybe_spawn_group_food(self, agent: Agent, close_allies: int) -> None:
+        if agent.group_id == self._UNGROUPED:
+            return
+        threshold = max(0, self._config.feedback.group_food_neighbor_threshold)
+        if close_allies < threshold:
+            return
+        spawn_chance = self._config.feedback.group_food_spawn_chance
+        if spawn_chance <= 0.0 or self._rng.next_float() >= spawn_chance:
+            return
+        amount = self._config.feedback.group_food_spawn_amount
+        if amount <= 0.0:
+            return
+        self._pending_group_food.append((agent.position, agent.group_id, amount))
 
     def _compute_desired_velocity(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> tuple[Vector2, bool]:
         desired = ZERO
@@ -400,6 +515,8 @@ class World:
         pheromone_gradient = ZERO if agent.group_id == self._UNGROUPED else self._pheromone_gradient(agent.group_id, agent.position)
         danger_gradient_away = self._danger_gradient(agent.position)
         group_cohesion_bias = self._group_cohesion(agent, neighbors, neighbor_offsets)
+        intergroup_bias = self._intergroup_avoidance(agent, neighbors, neighbor_offsets)
+        personal_space_bias = self._personal_space(neighbor_offsets)
 
         food_bias = _safe_normalize(food_gradient) if food_gradient.length_squared() > 1e-4 else ZERO
         pheromone_bias = _safe_normalize(pheromone_gradient) if pheromone_gradient.length_squared() > 1e-4 else ZERO
@@ -408,19 +525,31 @@ class World:
         if agent.energy < self._config.species.reproduction_energy_threshold * 0.6 or food_here > self._config.environment.food_per_cell * 0.5 or food_gradient.length_squared() > 0.01:
             agent.state = AgentState.SEEKING_FOOD
             desired = desired + food_bias * (self._config.species.base_speed * 0.4)
-            desired = desired + self._rng.next_unit_circle() * (self._config.species.base_speed * 0.25)
+            desired = desired + self._wander_direction(agent) * (self._config.species.base_speed * 0.25)
         elif agent.energy > self._config.species.reproduction_energy_threshold and agent.age > self._config.species.adult_age:
             agent.state = AgentState.SEEKING_MATE
             desired = desired + self._cohesion(neighbor_offsets) * (self._config.species.base_speed * 0.8)
             desired = desired + pheromone_bias * (self._config.species.base_speed * 0.25)
         else:
             agent.state = AgentState.WANDER
-            desired = desired + self._rng.next_unit_circle() * (self._config.species.base_speed * self._config.species.wander_jitter)
+            desired = desired + self._wander_direction(agent) * (self._config.species.base_speed * self._config.species.wander_jitter)
             desired = desired + pheromone_bias * (self._config.species.base_speed * 0.15)
 
-        desired = desired + self._separation(agent, neighbors, neighbor_offsets) * (self._config.species.base_speed * 1.2)
+        desired = desired + personal_space_bias * (self._config.species.base_speed * self._config.feedback.personal_space_weight)
+        desired = desired + intergroup_bias * (self._config.species.base_speed * self._config.feedback.other_group_avoid_weight)
+        desired = desired + self._separation(agent, neighbors, neighbor_offsets) * (self._config.species.base_speed * 1.4)
         desired = desired + self._alignment(agent, neighbors) * (self._config.species.base_speed * 0.3)
-        desired = desired + group_cohesion_bias * (self._config.species.base_speed * self._config.feedback.group_cohesion_weight)
+        desired = desired + group_cohesion_bias * (
+            self._config.species.base_speed
+            * self._config.feedback.group_cohesion_weight
+            * self._config.feedback.ally_cohesion_weight
+        )
+        boundary_bias, boundary_proximity = self._boundary_avoidance(agent.position)
+        desired = desired + boundary_bias * (self._config.species.base_speed * self._config.boundary_avoidance_weight)
+        if boundary_proximity > 0.0 and boundary_bias.length_squared() > 1e-8 and desired.length_squared() > 1e-8:
+            turn = min(1.0, boundary_proximity * self._config.boundary_turn_weight)
+            inward = boundary_bias * self._config.species.base_speed
+            desired = desired + (inward - desired) * turn
         desired = desired - danger_bias * (self._config.species.base_speed * 0.2)
         return desired, sensed_danger
 
@@ -430,7 +559,12 @@ class World:
         accum = ZERO
         for other, offset in zip(neighbors, neighbor_vectors):
             dist_sq = max(offset.length_squared(), 0.1)
-            weight = 0.5 if agent.group_id != self._UNGROUPED and other.group_id == agent.group_id else 1.0
+            same_group = agent.group_id != self._UNGROUPED and other.group_id == agent.group_id
+            weight = (
+                self._config.feedback.ally_separation_weight
+                if same_group
+                else self._config.feedback.other_group_separation_weight
+            )
             accum = accum - (offset / dist_sq) * weight
         return _safe_normalize(accum)
 
@@ -465,6 +599,86 @@ class World:
             return ZERO
         return _safe_normalize(accum / count)
 
+    def _personal_space(self, neighbor_offsets: List[Vector2]) -> Vector2:
+        radius = self._config.feedback.personal_space_radius
+        if radius <= 1e-6 or not neighbor_offsets:
+            return ZERO
+        radius_sq = radius * radius
+        accum = ZERO
+        count = 0
+        for offset in neighbor_offsets:
+            dist_sq = offset.length_squared()
+            if dist_sq <= 1e-9 or dist_sq > radius_sq:
+                continue
+            dist = math.sqrt(dist_sq)
+            strength = 1.0 - min(1.0, dist / radius)
+            accum = accum - _safe_normalize(offset) * strength
+            count += 1
+        if count == 0:
+            return ZERO
+        return _safe_normalize(accum / count)
+
+    def _intergroup_avoidance(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> Vector2:
+        radius = self._config.feedback.other_group_avoid_radius
+        if radius <= 1e-6:
+            return ZERO
+        radius_sq = radius * radius
+        accum = ZERO
+        count = 0
+        for other, offset in zip(neighbors, neighbor_offsets):
+            if agent.group_id == self._UNGROUPED or other.group_id == self._UNGROUPED:
+                continue
+            if other.group_id == agent.group_id:
+                continue
+            dist_sq = offset.length_squared()
+            if dist_sq <= 1e-9 or dist_sq > radius_sq:
+                continue
+            falloff = 1.0 - min(1.0, math.sqrt(dist_sq) / radius)
+            if falloff <= 1e-5:
+                continue
+            accum = accum - _safe_normalize(offset) * falloff
+            count += 1
+        if count == 0:
+            return ZERO
+        return _safe_normalize(accum / count)
+
+    def _wander_direction(self, agent: Agent) -> Vector2:
+        refresh = max(1e-4, self._config.species.wander_refresh_seconds)
+        if agent.wander_time <= 0.0 or agent.wander_dir.length_squared() < 1e-10:
+            agent.wander_dir = self._rng.next_unit_circle()
+            agent.wander_time = refresh
+        else:
+            agent.wander_time -= self._config.time_step
+        return agent.wander_dir
+
+    def _boundary_avoidance(self, position: Vector2) -> tuple[Vector2, float]:
+        margin = self._config.boundary_margin
+        size = self._config.world_size
+        if margin <= 1e-6 or size <= 0.0:
+            return ZERO, 0.0
+
+        push = Vector2()
+        if position.x < margin:
+            push.x += 1.0 - (position.x / margin)
+        elif position.x > size - margin:
+            push.x -= 1.0 - ((size - position.x) / margin)
+        if position.y < margin:
+            push.y += 1.0 - (position.y / margin)
+        elif position.y > size - margin:
+            push.y -= 1.0 - ((size - position.y) / margin)
+
+        proximity_x = 0.0
+        proximity_y = 0.0
+        proximity_x = max(0.0, 1.0 - min(position.x, size - position.x) / margin)
+        proximity_y = max(0.0, 1.0 - min(position.y, size - position.y) / margin)
+        proximity = min(1.0, max(proximity_x, proximity_y))
+
+        if push.length_squared() < 1e-8 or proximity <= 0.0:
+            return ZERO, 0.0
+
+        strength = proximity * (0.4 + 0.6 * proximity)
+        return _safe_normalize(push) * strength, proximity
+
     @staticmethod
     def _cohesion(neighbor_vectors: List[Vector2]) -> Vector2:
         if not neighbor_vectors:
@@ -475,31 +689,47 @@ class World:
         center = center / len(neighbor_vectors)
         return _safe_normalize(center)
 
+    def _clamp_position(self, position: Vector2) -> Vector2:
+        size = self._config.world_size
+        return Vector2(
+            max(0.0, min(size, position.x)),
+            max(0.0, min(size, position.y)),
+        )
+
     def _food_gradient(self, position: Vector2) -> Vector2:
         step = self._config.cell_size
-        right = self._environment.peek_food(position + Vector2(step, 0))
-        left = self._environment.peek_food(position + Vector2(-step, 0))
-        up = self._environment.peek_food(position + Vector2(0, step))
-        down = self._environment.peek_food(position + Vector2(0, -step))
+        right = self._environment.peek_food(self._clamp_position(position + Vector2(step, 0)))
+        left = self._environment.peek_food(self._clamp_position(position + Vector2(-step, 0)))
+        up = self._environment.peek_food(self._clamp_position(position + Vector2(0, step)))
+        down = self._environment.peek_food(self._clamp_position(position + Vector2(0, -step)))
         return Vector2(right - left, up - down)
 
     def _pheromone_gradient(self, group_id: int, position: Vector2) -> Vector2:
         step = self._config.cell_size
-        right = self._environment.sample_pheromone(position + Vector2(step, 0), group_id)
-        left = self._environment.sample_pheromone(position + Vector2(-step, 0), group_id)
-        up = self._environment.sample_pheromone(position + Vector2(0, step), group_id)
-        down = self._environment.sample_pheromone(position + Vector2(0, -step), group_id)
+        right = self._environment.sample_pheromone(self._clamp_position(position + Vector2(step, 0)), group_id)
+        left = self._environment.sample_pheromone(self._clamp_position(position + Vector2(-step, 0)), group_id)
+        up = self._environment.sample_pheromone(self._clamp_position(position + Vector2(0, step)), group_id)
+        down = self._environment.sample_pheromone(self._clamp_position(position + Vector2(0, -step)), group_id)
         return Vector2(right - left, up - down)
 
     def _danger_gradient(self, position: Vector2) -> Vector2:
         step = self._config.cell_size
-        right = self._environment.sample_danger(position + Vector2(step, 0))
-        left = self._environment.sample_danger(position + Vector2(-step, 0))
-        up = self._environment.sample_danger(position + Vector2(0, step))
-        down = self._environment.sample_danger(position + Vector2(0, -step))
+        right = self._environment.sample_danger(self._clamp_position(position + Vector2(step, 0)))
+        left = self._environment.sample_danger(self._clamp_position(position + Vector2(-step, 0)))
+        up = self._environment.sample_danger(self._clamp_position(position + Vector2(0, step)))
+        down = self._environment.sample_danger(self._clamp_position(position + Vector2(0, -step)))
         return Vector2(right - left, up - down)
 
-    def _apply_life_cycle(self, agent: Agent, neighbor_count: int, can_create_groups: bool) -> int:
+    def _tick_environment(self, active_groups: Set[int]) -> None:
+        env_dt = self._config.environment_tick_interval if self._config.environment_tick_interval > 1e-6 else self._config.time_step
+        self._environment_accumulator += self._config.time_step
+        while self._environment_accumulator >= env_dt:
+            self._environment.prune_pheromones(active_groups)
+            self._environment.prune_group_food(active_groups)
+            self._environment.tick(env_dt)
+            self._environment_accumulator -= env_dt
+
+    def _apply_life_cycle(self, agent: Agent, neighbor_count: int, same_group_neighbors: int, can_create_groups: bool) -> int:
         dt = self._config.time_step
         births_added = 0
         speed_cost = agent.velocity.length() * 0.05
@@ -518,11 +748,23 @@ class World:
         else:
             agent.stress = max(0.0, agent.stress - 0.05 * dt)
 
-        available = self._environment.sample_food(agent.position)
-        if available > 0:
-            consumed = min(available, self._config.environment.food_consumption_rate * dt)
-            self._environment.consume_food(agent.position, consumed)
-            agent.energy += consumed
+        max_consumption = self._config.environment.food_consumption_rate * dt
+        gained_energy = 0.0
+        remaining = max_consumption
+        if remaining > 0.0 and agent.group_id != self._UNGROUPED:
+            group_available = self._environment.sample_group_food(agent.position, agent.group_id)
+            if group_available > 0.0:
+                from_group = min(group_available, remaining)
+                self._environment.consume_group_food(agent.position, agent.group_id, from_group)
+                gained_energy += from_group
+                remaining -= from_group
+        if remaining > 0.0:
+            available = self._environment.sample_food(agent.position)
+            if available > 0:
+                consumed = min(available, remaining)
+                self._environment.consume_food(agent.position, consumed)
+                gained_energy += consumed
+        agent.energy += gained_energy
 
         if (
             agent.energy > self._config.species.reproduction_energy_threshold
@@ -534,13 +776,25 @@ class World:
                 excess = neighbor_count - self._config.feedback.local_density_soft_cap
                 drop = excess * self._config.feedback.density_reproduction_slope
                 density_factor = max(0.0, min(1.0, self._config.feedback.density_reproduction_penalty - drop))
-            reproduction_chance = max(0.0, min(1.0, 0.25 * density_factor))
+            group_factor = 1.0
+            if agent.group_id != self._UNGROUPED:
+                penalty = same_group_neighbors * self._config.feedback.group_reproduction_penalty_per_ally
+                group_factor = max(
+                    self._config.feedback.group_reproduction_min_factor,
+                    1.0 - penalty,
+                )
+            reproduction_chance = max(0.0, min(1.0, 0.25 * density_factor * group_factor))
             if self._rng.next_float() < reproduction_chance:
                 child_energy = agent.energy * 0.5
                 agent.energy -= child_energy + self._config.species.birth_energy_cost
                 child_group = self._mutate_group(agent.group_id, can_create_groups)
                 if agent.group_id == self._UNGROUPED and child_group != self._UNGROUPED:
-                    agent.group_id = child_group
+                    self._set_group(agent, child_group)
+                child_cooldown = (
+                    self._config.feedback.group_merge_cooldown_seconds
+                    if child_group != self._UNGROUPED and self._config.feedback.group_merge_cooldown_seconds > 0.0
+                    else 0.0
+                )
                 child = Agent(
                     id=self._next_id,
                     generation=agent.generation + 1,
@@ -551,6 +805,7 @@ class World:
                     energy=child_energy,
                     age=0.0,
                     state=AgentState.WANDER,
+                    group_cooldown=child_cooldown,
                 )
                 self._next_id += 1
                 self._birth_queue.append(child)
@@ -573,6 +828,7 @@ class World:
             agent.alive = False
             self._pending_food.append((agent.position, self._config.environment.food_from_death))
         return births_added
+
     def _mutate_group(self, group_id: int, can_create_groups: bool) -> int:
         if not can_create_groups:
             return group_id
@@ -583,8 +839,9 @@ class World:
                 return new_group
             return self._UNGROUPED
         if self._rng.next_float() < self._config.feedback.group_mutation_chance:
-            delta = self._rng.next_int(3) - 1
-            return abs(group_id + delta) % 8
+            new_group = self._next_group_id
+            self._next_group_id += 1
+            return new_group
         return group_id
 
     def _apply_field_events(self) -> None:
@@ -594,15 +851,20 @@ class World:
             self._environment.add_danger(pos, amt)
         for pos, gid, amt in self._pending_pheromone:
             self._environment.add_pheromone(pos, gid, amt)
+        for pos, gid, amt in self._pending_group_food:
+            self._environment.add_group_food(pos, gid, amt)
         self._pending_food.clear()
         self._pending_danger.clear()
         self._pending_pheromone.clear()
+        self._pending_group_food.clear()
 
     def _apply_births(self) -> None:
         for agent in self._birth_queue:
             self._agents.append(agent)
-            self._id_to_index[agent.id] = len(self._agents) - 1
         self._birth_queue.clear()
+
+    def _refresh_index_map(self) -> None:
+        self._id_to_index = {agent.id: i for i, agent in enumerate(self._agents)}
 
     def _remove_dead(self) -> int:
         deaths = 0
@@ -657,6 +919,16 @@ class World:
         self._group_scratch.clear()
         return population, avg_energy, avg_age, groups
 
+    def _active_group_ids(self) -> Set[int]:
+        groups: Set[int] = set()
+        for agent in self._agents:
+            if agent.group_id != self._UNGROUPED:
+                groups.add(agent.group_id)
+        for agent in self._birth_queue:
+            if agent.group_id != self._UNGROUPED:
+                groups.add(agent.group_id)
+        return groups
+
     def _create_metrics(self, tick: int, births: int, deaths: int, neighbor_checks: int, duration_ms: float) -> TickMetrics:
         population, avg_energy, avg_age, groups = self._population_stats()
         return TickMetrics(
@@ -684,14 +956,3 @@ class World:
             neighbor_checks=0,
             tick_duration_ms=0.0,
         )
-
-    def _try_get_agent(self, agent_id: int) -> Optional[Agent]:
-        idx = self._id_to_index.get(agent_id)
-        if idx is None:
-            return None
-        if 0 <= idx < len(self._agents):
-            return self._agents[idx]
-        return None
-
-    def _refresh_index_map(self) -> None:
-        self._id_to_index = {agent.id: i for i, agent in enumerate(self._agents)}
