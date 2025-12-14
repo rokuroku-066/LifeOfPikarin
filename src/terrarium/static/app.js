@@ -17,6 +17,7 @@ const stopBtn = document.getElementById('stop');
 const resetBtn = document.getElementById('reset');
 const speedSlider = document.getElementById('speed');
 const header = document.querySelector('header');
+const connectionBadge = document.getElementById('connection');
 
 const worldSize = 100;
 const halfWorld = worldSize / 2;
@@ -68,6 +69,17 @@ const tmpLook = new THREE.Vector3();
 
 let trackedAgentId = null;
 let lastTrackedYaw = 0;
+const targetFps = 45;
+const minFrameInterval = 1000 / targetFps;
+let lastRenderTime = 0;
+let lastRenderMs = 0;
+
+function setConnectionStatus(state, label) {
+  if (!connectionBadge) return;
+  connectionBadge.textContent = label;
+  connectionBadge.classList.remove('ok', 'warn', 'error');
+  connectionBadge.classList.add(state);
+}
 
 function updateEnergyVisual(snapshot) {
   const avg = snapshot?.metrics?.average_energy;
@@ -175,7 +187,7 @@ function initThree() {
   const { width, height } = measureContainer();
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
-  const pixelRatio = Math.min(window.devicePixelRatio ?? 1, 1.5);
+  const pixelRatio = Math.min(window.devicePixelRatio ?? 1, 1.3);
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(width, height);
   renderer.autoClear = false;
@@ -267,18 +279,29 @@ function setPovCameraProjection(viewport) {
   cameras.pov.updateProjectionMatrix();
 }
 
-function animate() {
+function animate(now) {
   requestAnimationFrame(animate);
-  const now = performance.now();
+  if (now - lastRenderTime < minFrameInterval) {
+    return;
+  }
+  lastRenderTime = now;
+  const frameStart = performance.now();
   updateView(now);
   if (angleControls) {
     angleControls.update();
   }
+  lastRenderMs = performance.now() - frameStart;
+  adjustPixelRatioIfNeeded();
 }
 
 function connect() {
+  if (window.location.protocol === 'file:') {
+    setConnectionStatus('warn', 'offline preview (no server)');
+    return;
+  }
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
   socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
+  socket.onopen = () => setConnectionStatus('ok', 'connected');
   socket.onmessage = (event) => {
     const parsed = JSON.parse(event.data);
     parsed.agentsById = new Map(parsed.agents.map((agent) => [agent.id, agent]));
@@ -291,12 +314,18 @@ function connect() {
       prevSnapshotTime = nextSnapshotTime;
     }
   };
+  socket.onerror = () => setConnectionStatus('error', 'connection error');
   socket.onclose = () => {
+    setConnectionStatus('warn', 'disconnected, retrying…');
     setTimeout(connect, 1000);
   };
 }
 
 function sendControl(path, body) {
+  if (window.location.protocol === 'file:') {
+    setConnectionStatus('warn', 'offline preview (no server)');
+    return;
+  }
   fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -465,6 +494,26 @@ function updateView(now) {
 
   updateTrackedUi(trackedAgent);
   renderViews(trackedPose);
+}
+
+function adjustPixelRatioIfNeeded() {
+  if (!renderer || !viewports) return;
+  const current = renderer.getPixelRatio();
+  const tooSlow = lastRenderMs > 24 && current > 1.0;
+  const plentyFast = lastRenderMs < 12 && current < 1.25;
+  if (tooSlow) {
+    const next = Math.max(1.0, current - 0.1);
+    if (next !== current) {
+      renderer.setPixelRatio(next);
+      renderer.setSize(viewports.full.width, viewports.full.height, false);
+    }
+  } else if (plentyFast) {
+    const next = Math.min(1.3, current + 0.05);
+    if (next !== current) {
+      renderer.setPixelRatio(next);
+      renderer.setSize(viewports.full.width, viewports.full.height, false);
+    }
+  }
 }
 
 function renderViews(trackedPose) {

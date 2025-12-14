@@ -30,6 +30,37 @@ header {
   flex-wrap: wrap;
 }
 
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  font-size: 12px;
+  letter-spacing: 0.1px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e5e5;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.status.ok {
+  background: rgba(46, 160, 67, 0.15);
+  border-color: rgba(46, 160, 67, 0.4);
+  color: #9ef0b5;
+}
+
+.status.warn {
+  background: rgba(255, 171, 0, 0.15);
+  border-color: rgba(255, 171, 0, 0.35);
+  color: #ffd891;
+}
+
+.status.error {
+  background: rgba(255, 90, 90, 0.15);
+  border-color: rgba(255, 90, 90, 0.35);
+  color: #ffb0b0;
+}
+
 .controls span {
   font-size: 14px;
   color: #d7d7d7;

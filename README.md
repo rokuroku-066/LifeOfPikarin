@@ -92,8 +92,11 @@ python -m terrarium.headless --steps 3000 --seed 42 --initial 120 --max 500 --lo
 - 環境フィールド: `FoodRegenPerSecond`, `FoodFromDeath`, `DangerDiffusionRate` / `DangerDecayRate`, `PheromoneDepositOnBirth`
 - フィールド更新頻度: `EnvironmentTickInterval`（既定 0.12 秒）。食料/危険/フェロモンの拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
 - 初期/最大個体数: `initial_population` 240, `max_population` 500（スナップショットサイズと近傍計算コストを抑制）。
+- 境界バイアス: `boundary_margin` 内では `boundary_avoidance_weight` で内側へ押し戻し、`boundary_turn_weight` で進行方向を内向きに寄せ、反射境界と併用して滑らかに折り返します。
 - ランダム歩行の更新周期: `wander_refresh_seconds`（SpeciesConfig, 既定 0.12 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
-- グループ形成・分離: `GroupFormationWarmupSeconds`, `GroupFormationChance`, `GroupAdoptionChance`, `GroupSplitChance` など（初期グループ数は 0）
+- 孤立時の再コロニー化: 近距離の味方が一定秒数見つからない場合は `group_switch_chance` で近傍多数派へ乗り換え、閾値を満たさなければ `group_detach_new_group_chance` で新グループを立ち上げ、それも外れれば一旦未所属に戻ります。
+- グループ形成・分離: `GroupFormationWarmupSeconds`, `GroupFormationChance`, `GroupAdoptionChance`, `GroupSplitChance` に加え、近傍の同グループ人数に比例して分裂確率を上乗せする `GroupSplitSizeBonusPerNeighbor` と上限 `GroupSplitChanceMax`、サイズ起因ストレス係数 `GroupSplitSizeStressWeight`、分裂時に巻き込む仲間数 `GroupSplitRecruitmentCount`、分裂/合流後の多数派への再統合を一定時間抑える `GroupMergeCooldownSeconds`、味方が周囲にいるとき多数派への乗り換えを止める `GroupAdoptionGuardMinAllies` など（初期グループ数は 0）
+- グループ内の繁殖抑制: `GroupReproductionPenaltyPerAlly`（同グループ近傍1人あたりの繁殖率低下量）と `GroupReproductionMinFactor`（下限）。大きなグループに属しているほど個体の繁殖確率が下がり、コロニーサイズの自律分散を促します。
 - 群れ間距離/結束: `ally_cohesion_weight`, `ally_separation_weight`, `other_group_separation_weight`, `other_group_avoid_radius`, `other_group_avoid_weight`（同グループは密集、異グループは早めに距離を取る調整用）
 
 ---
@@ -136,7 +139,7 @@ npm run test:js
 ```
 
 - 同一シードでの決定性、SpatialGrid の近傍取得、個体数の上限チェックをカバーしています。
-- Web ビュー用のユーティリティ（グループ色計算）の決定性を Node 組み込みのテストランナーで検証します。
+- Web ビュー用のユーティリティ（グループ色計算）の決定性を Node 組み込みのテストランナーで検証します（`npm run test:js` が内部で `node --test "tests/js/**/*.js"` を呼ぶので PowerShell / bash どちらでも同一コマンドで動作）。
 
 ---
 
@@ -150,7 +153,7 @@ npm run test:js
 ```
 
 - 固定シードでの結果一致、近傍検索の範囲制限、負のフィードバックによる個体数抑制、メトリクス CSV 出力などをカバーしています。
-- Three.js ビュー向けの色ユーティリティについて、グループ ID に対する色相の正規化・ラップアラウンドの挙動を確認できます。
+- Three.js ビュー向けの色ユーティリティについて、グループ ID に対する色相の正規化・ラップアラウンドの挙動を確認できます（`npm run test:js` 経由で `node --test "tests/js/**/*.js"` を実行するクロスプラットフォーム構成）。
 
 ### 環境フィールド
 

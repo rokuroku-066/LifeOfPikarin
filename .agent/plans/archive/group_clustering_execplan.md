@@ -35,7 +35,8 @@ Record every decision made while working on the plan in the format:
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or at completion. Compare the result against the original purpose.
+- Steering changes (ally cohesion vs. other separation/avoid) remain deterministic and covered by existing world tests; new group-switch guard keeps clusters from dissolving into majority with too few neighbors.
+- Latest validation: pytest (25) and npm test:js both green. Long-run 20k-tick headless run (seed 42) ended with population 499 and 46 colonies (avg last 10k ticks 66.17), showing tighter in-group packing and sustained multi-colony coexistence without O(N²) work.
 
 ## Context and Orientation
 

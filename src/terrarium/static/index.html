@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Terrarium Web Viewer</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css" onerror="this.href='styles.css'">
 </head>
 <body>
   <header>
@@ -16,6 +16,7 @@
       <span id="tick">tick: 0</span>
       <span id="population">pop: 0</span>
       <span id="tracked">POV: --</span>
+      <span id="connection" class="status warn">offline preview</span>
     </div>
   </header>
   <main>
@@ -38,6 +39,6 @@
       }
     }
   </script>
-  <script type="module" src="/static/app.js"></script>
+  <script type="module" src="/static/app.js" onerror="const s=document.createElement('script');s.type='module';s.src='app.js';document.body.appendChild(s);"></script>
 </body>
 </html>

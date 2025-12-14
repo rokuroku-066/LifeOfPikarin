@@ -107,7 +107,7 @@ def test_disease_death_returns_zero_births():
     world = World(config)
     agent = world.agents[0]
 
-    births = world._apply_life_cycle(agent, neighbor_count=100, can_create_groups=False)
+    births = world._apply_life_cycle(agent, neighbor_count=100, same_group_neighbors=0, can_create_groups=False)
 
     assert births == 0
     assert not agent.alive
@@ -174,6 +174,123 @@ def test_lonely_agent_switches_to_nearby_majority():
         world.step(tick)
 
     assert world.agents[0].group_id == 1
+    assert world.agents[0].group_lonely_seconds == 0.0
+
+
+def test_lonely_agent_does_not_switch_without_threshold_neighbors():
+    config = SimulationConfig(
+        seed=6,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(base_speed=0.0, max_acceleration=0.0, metabolism_per_second=0.0, vision_radius=3.0),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=1.0,
+            group_detach_close_neighbor_threshold=1,
+            group_detach_after_seconds=1.0,
+            group_switch_chance=1.0,
+            group_detach_new_group_chance=0.0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=2,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=10,
+                generation=0,
+                group_id=0,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=11,
+                generation=0,
+                group_id=1,
+                position=Vector2(1.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 12
+    world._next_group_id = 2
+    world._refresh_index_map()
+
+    for tick in range(2):
+        world.step(tick)
+
+    assert world.agents[0].group_id == world._UNGROUPED
+    assert world.agents[0].group_lonely_seconds == 0.0
+
+
+def test_lonely_agent_switches_when_neighbor_threshold_met():
+    config = SimulationConfig(
+        seed=8,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(base_speed=0.0, max_acceleration=0.0, metabolism_per_second=0.0, vision_radius=3.0),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=1.0,
+            group_detach_close_neighbor_threshold=1,
+            group_detach_after_seconds=1.0,
+            group_switch_chance=1.0,
+            group_detach_new_group_chance=0.0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=20,
+                generation=0,
+                group_id=0,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=21,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.5, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=22,
+                generation=0,
+                group_id=2,
+                position=Vector2(1.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 23
+    world._next_group_id = 3
+    world._refresh_index_map()
+
+    world.step(0)
+
+    assert world.agents[0].group_id == 2
     assert world.agents[0].group_lonely_seconds == 0.0
 
 
@@ -267,7 +384,242 @@ def test_lonely_group_spawns_new_group_instead_of_ungrouped():
     world.step(0)
 
     assert world.agents[0].group_id == 1
-    assert world.agents[0].group_lonely_seconds == 0.0
+
+
+def test_split_recruits_neighbors_and_sets_cooldown():
+    config = SimulationConfig(
+        seed=101,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=4.0,
+            wander_jitter=0.0,
+        ),
+        feedback=FeedbackConfig(
+            group_formation_warmup_seconds=0.0,
+            group_split_neighbor_threshold=1,
+            group_split_chance=1.0,
+            group_split_size_bonus_per_neighbor=0.0,
+            group_split_chance_max=1.0,
+            group_split_size_stress_weight=0.0,
+            group_split_stress_threshold=0.0,
+            group_split_new_group_chance=1.0,
+            group_split_recruitment_count=2,
+            group_merge_cooldown_seconds=2.0,
+            group_cohesion_weight=0.0,
+            group_adoption_neighbor_threshold=1,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=500,
+                generation=0,
+                group_id=5,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+                stress=1.0,
+            ),
+            Agent(
+                id=501,
+                generation=0,
+                group_id=5,
+                position=Vector2(0.4, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=502,
+                generation=0,
+                group_id=5,
+                position=Vector2(-0.4, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 503
+    world._next_group_id = 6
+    world._refresh_index_map()
+
+    world.step(0)
+
+    new_group = world.agents[0].group_id
+    assert new_group >= 0 and new_group != 5
+    recruited = [a for a in world.agents[1:] if a.group_id == new_group]
+    assert len(recruited) >= 1
+    assert world.agents[0].group_cooldown == approx(config.feedback.group_merge_cooldown_seconds)
+
+
+def test_adoption_guard_respects_local_allies():
+    config = SimulationConfig(
+        seed=202,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=3.0,
+            wander_jitter=0.0,
+        ),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=1.0,
+            group_detach_close_neighbor_threshold=1,
+            group_detach_after_seconds=1.0,
+            group_switch_chance=1.0,
+            group_adoption_neighbor_threshold=1,
+            group_adoption_chance=1.0,
+            group_adoption_guard_min_allies=2,
+            group_merge_cooldown_seconds=0.0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=600,
+                generation=0,
+                group_id=1,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=601,
+                generation=0,
+                group_id=1,
+                position=Vector2(0.6, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=602,
+                generation=0,
+                group_id=1,
+                position=Vector2(-0.6, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=603,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.0, 1.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=604,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.0, 1.3),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 605
+    world._next_group_id = 3
+    world._refresh_index_map()
+
+    world.step(0)
+
+    assert world.agents[0].group_id == 1
+
+
+def test_group_merge_cooldown_blocks_immediate_adoption():
+    config = SimulationConfig(
+        seed=303,
+        time_step=0.5,
+        initial_population=0,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=3.0,
+            wander_jitter=0.0,
+        ),
+        feedback=FeedbackConfig(
+            group_adoption_neighbor_threshold=1,
+            group_adoption_chance=1.0,
+            group_adoption_guard_min_allies=0,
+            group_merge_cooldown_seconds=1.0,
+            group_formation_warmup_seconds=0.0,
+            group_cohesion_weight=0.0,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=700,
+                generation=0,
+                group_id=1,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+                group_cooldown=0.6,
+            ),
+            Agent(
+                id=701,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.6, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=702,
+                generation=0,
+                group_id=2,
+                position=Vector2(-0.6, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 703
+    world._next_group_id = 3
+    world._refresh_index_map()
+
+    world.step(0)
+
+    assert world.agents[0].group_id == 1
+    assert world.agents[0].group_cooldown == approx(0.1)
+    assert world.agents[0].group_lonely_seconds == approx(config.time_step)
 
 
 def _make_reflective_config(base_speed: float = 50.0) -> SimulationConfig:
@@ -672,3 +1024,73 @@ def test_ally_cohesion_weight_scales_pull():
 
     assert desired_high.x > desired_low.x
     assert desired_high.y == approx(desired_low.y)
+
+
+def test_group_split_probability_scales_with_local_size():
+    config = SimulationConfig(
+        seed=23,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=4.0,
+            wander_jitter=0.0,
+        ),
+        feedback=FeedbackConfig(
+            group_formation_warmup_seconds=0.0,
+            group_split_neighbor_threshold=1,
+            group_split_chance=0.0,
+            group_split_size_bonus_per_neighbor=1.0,
+            group_split_chance_max=1.0,
+            group_split_size_stress_weight=1.0,
+            group_split_stress_threshold=0.5,
+            group_split_new_group_chance=1.0,
+            group_cohesion_weight=0.0,
+            group_adoption_neighbor_threshold=1,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=400,
+                generation=0,
+                group_id=0,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=401,
+                generation=0,
+                group_id=0,
+                position=Vector2(0.5, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=402,
+                generation=0,
+                group_id=0,
+                position=Vector2(-0.5, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=5.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 403
+    world._next_group_id = 1
+    world._refresh_index_map()
+
+    world.step(0)
+
+    assert world.agents[0].group_id not in (world._UNGROUPED, 0)

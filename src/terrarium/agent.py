@@ -27,6 +27,7 @@ class Agent:
     alive: bool = True
     stress: float = 0.0
     group_lonely_seconds: float = 0.0
+    group_cooldown: float = 0.0
     heading: float = 0.0
     wander_dir: Vector2 = field(default_factory=Vector2)
     wander_time: float = 0.0

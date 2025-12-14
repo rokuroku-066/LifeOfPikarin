@@ -37,7 +37,9 @@ Smooth agent motion by lowering per-tick simulation time and browser rendering c
 
 ## Outcomes & Retrospective
 
-Pending.
+- Headless smoke after optimizations (vision 6, cell 3, env_tick_interval 0.12s, pop 240/500) improved from mean 24.37ms/p95 29.40ms (baseline) to mean 12.85ms/p95 19.30ms/max 38.34ms over 500 ticks (artifacts/baseline_after6.csv); Python tests stayed deterministic.
+- Long-run headless 20k ticks (seed 42, artifacts/headless_20000.csv) held population at 499 (mean 492.8) with groups_final 46 (mean last 10k 66.17) and continued births/deaths (7041/6782). Tick durations averaged 28.87ms with p95 55.27ms and occasional env-batch spikes max 180.15ms but no runaway growth/extinction.
+- Viewer-side pixel ratio cap + shadow disable remain in place; npm test:js and pytest both pass, keeping Sim/View separation intact.
 
 ## Context and Orientation
 

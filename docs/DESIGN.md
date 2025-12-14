@@ -481,3 +481,8 @@ Guideless ALife モデルのように、事前の適応度関数を決めず、�
 - 高エネルギー状態には追加の代謝コスト（EnergySoftCap, HighEnergyMetabolismSlope）を課し、エネルギーの積み上がりを防ぐ。
 - 基礎・加齢・密度に比例する死亡ハザード（BaseDeathProbabilityPerSecond, AgeDeathProbabilityPerSecond, DensityDeathProbabilityPerNeighborPerSecond）を導入し、出生/死亡のサイクルが止まらないようにした。
 - すべての処理は Simulation 側に閉じており、View は状態を読むだけで制御しない。負のフィードバックは局所情報のみで計算し、決定論的 RNG を使うためリプレイ可能。
+
+- environment_tick_interval (default 0.12s) batches diffusion/decay to keep environment updates cheap.
+- boundary_avoidance_weight and boundary_turn_weight steer agents gently back inside before reflective walls flip velocity.
+- Lonely agents only switch when neighbors meet group_adoption_neighbor_threshold; otherwise they may seed a new group via group_detach_new_group_chance or briefly become ungrouped.
+- Pheromone decay remains > 0 and prune_pheromones(active_groups) trims layers so keys stay bounded by (cell count x live groups).

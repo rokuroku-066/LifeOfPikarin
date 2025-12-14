@@ -29,3 +29,27 @@ def test_pheromone_diffusion_is_bounded_and_fades():
         if not env._pheromone_field:
             break
     assert len(env._pheromone_field) == 0
+
+
+def test_prune_pheromones_limits_groups_and_decay():
+    config = EnvironmentConfig(
+        pheromone_diffusion_rate=0.25,
+        pheromone_decay_rate=1.0,
+    )
+    env = EnvironmentGrid(cell_size=1.0, config=config, world_size=3.0)
+
+    for gid in range(5):
+        for x in range(-1, 5):
+            for y in range(-1, 5):
+                env.add_pheromone(Vector2(x, y), group_id=gid, amount=1.0)
+
+    env.prune_pheromones({1, 2})
+
+    assert all(k[2] in {1, 2} for k in env._pheromone_field)
+    max_cells = env._max_index ** 2
+    assert len(env._pheromone_field) <= max_cells * 2
+
+    for _ in range(6):
+        env.tick(1.0)
+
+    assert len(env._pheromone_field) == 0

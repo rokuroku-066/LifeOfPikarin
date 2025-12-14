@@ -46,7 +46,7 @@ Summarize outcomes, gaps, and lessons learned at major milestones or at completi
 
 - Achieved three-way rendering (top-down orthographic, angled OrbitControls view, agent POV) using one renderer and shared InstancedMesh; manual devtools check shows expected splits and labels.
 - POV camera now auto-rotates with agent heading and reassigns on death; UI exposes tracked agent id.
-- Gaps: `pytest tests/python` currently fails on an existing group-switch test; needs separate fix in Simulation. `npm run test:js` script path fails on Windows though direct `node --test .\\tests\\js\\*.js` passes.
+- Follow-ups resolved: group-switch hysteresis now guarded by neighbor threshold (pytest all green) and `npm run test:js` is cross-platform via `node --test \"tests/js/**/*.js\"` (passes on Windows). Viewer remains read-only; long-run headless run shows sim stability with no impact on rendering contracts.
 
 ## Context and Orientation
 
