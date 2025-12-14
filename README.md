@@ -94,8 +94,8 @@ python -m terrarium.headless --steps 3000 --seed 42 --log artifacts/metrics_smok
 - エネルギー上限と代謝: `energy_soft_cap`, `high_energy_metabolism_slope`, `metabolism_per_second`, `initial_energy_fraction_of_threshold`
 - 繁殖トリガ: `reproduction_energy_threshold`, `adult_age`, `density_reproduction_slope`, `density_reproduction_penalty`
 - 寿命/密度死亡: `base_death_probability_per_second`, `age_death_probability_per_second`, `density_death_probability_per_neighbor_per_second`
-- 環境フィールド: `food_regen_per_second`, `food_from_death`, `danger_diffusion_rate` / `danger_decay_rate`, `pheromone_deposit_on_birth`
-- フィールド更新頻度: `environment_tick_interval`（既定 0.12 秒）。食料/危険/フェロモン等の拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
+- 環境フィールド: `food_regen_per_second`, `food_from_death`, `pheromone_diffusion_rate` / `pheromone_decay_rate`, `pheromone_deposit_on_birth`
+- フィールド更新頻度: `environment_tick_interval`（既定 0.12 秒）。食料/フェロモン等の拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
 - 初期/最大個体数: `initial_population`（既定 200）, `max_population`（既定 1000）
 - 境界バイアス: `boundary_margin` 内では `boundary_avoidance_weight` で内側へ押し戻し、`boundary_turn_weight` で進行方向を内向きに寄せ、反射境界と併用して滑らかに折り返します。
 - ランダム歩行の更新周期: `wander_refresh_seconds`（既定 0.12 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
@@ -164,11 +164,10 @@ npm run test:js
 
 ### 環境フィールド
 
-`EnvironmentGrid` はセル毎に `food`・`pheromone`（グループ別）・`danger` の 3 スカラーフィールドを持ち、毎ステップで減衰と隣接セルへの拡散を行います。
+`EnvironmentGrid` はセル毎に `food`・`pheromone`（グループ別）の 2 スカラーフィールドを持ち、毎ステップで減衰と隣接セルへの拡散を行います。
 
 - `food`: パッチ定義で初期化され、時間経過で再生・拡散し、消費や死亡で追加されます。`AgentState.SEEKING_FOOD` では `food` 勾配を優先します。
 - `pheromone`: 繁殖成功地点で自グループのフェロモンを撒き、グループ固有の濃度勾配が Cohesion に寄与します。拡散はワールド境界にクランプされ、`pheromone_decay_rate` > 0（デフォルト 0.05）で長時間走行時もフィールドサイズが暴走しません。
-- `danger`: 敵接近や危険サインで蓄積され、勾配や局所濃度が高いセルではエージェントが Flee 行動を選好します。
 
 ---
 

@@ -958,11 +958,10 @@ def test_personal_space_pushes_when_too_close():
         age=1.0,
         state=AgentState.WANDER,
     )
-    desired, sensed = world._compute_desired_velocity(agent, [other], [Vector2(0.2, 0.0)])
+    desired = world._compute_desired_velocity(agent, [other], [Vector2(0.2, 0.0)])
     assert desired.x < 0.0  # 押し返される
     # ほぼ一直線の押し返しになることを確認（y成分が小さい）
     assert abs(desired.y) < abs(desired.x) * 0.25
-    assert not sensed
 
 
 def test_other_group_separation_weight_pushes_harder_than_allies():
@@ -1067,12 +1066,11 @@ def test_intergroup_avoidance_applies_without_triggering_flee():
         state=AgentState.WANDER,
     )
 
-    desired, sensed = world._compute_desired_velocity(agent, [rival], [Vector2(3.0, 0.0)])
+    desired = world._compute_desired_velocity(agent, [rival], [Vector2(3.0, 0.0)])
 
     assert desired.x < 0.0  # 異グループから離れる
     assert abs(desired.y) < 1e-6
     assert agent.state == AgentState.WANDER
-    assert not sensed
 
 
 def test_ally_cohesion_weight_scales_pull():
@@ -1136,7 +1134,7 @@ def test_ally_cohesion_weight_scales_pull():
             age=25.0,
             state=AgentState.WANDER,
         )
-        desired, _ = world._compute_desired_velocity(agent, [ally], [Vector2(1.0, 0.0)])
+        desired = world._compute_desired_velocity(agent, [ally], [Vector2(1.0, 0.0)])
         return desired
 
     desired_low = compute_desired(config_low)
@@ -1252,11 +1250,10 @@ def test_group_base_attraction_pulls_toward_base():
         state=AgentState.WANDER,
     )
 
-    desired, sensed = world._compute_desired_velocity(agent, [], [])
+    desired = world._compute_desired_velocity(agent, [], [])
 
     assert desired.x < 0.0
     assert abs(desired.y) < 1e-6
-    assert not sensed
 
 
 def test_min_separation_term_activates_when_too_close():

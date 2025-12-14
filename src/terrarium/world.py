@@ -95,7 +95,6 @@ class World:
         self._neighbor_agents: List[Agent] = []
         self._group_scratch: Set[int] = set()
         self._pending_food: List[tuple[Vector2, float]] = []
-        self._pending_danger: List[tuple[Vector2, float]] = []
         self._pending_pheromone: List[tuple[Vector2, int, float]] = []
         self._ungrouped_neighbors: List[Agent] = []
         self._group_counts_scratch: Dict[int, int] = {}
@@ -127,7 +126,6 @@ class World:
         self._neighbor_agents.clear()
         self._group_scratch.clear()
         self._pending_food.clear()
-        self._pending_danger.clear()
         self._pending_pheromone.clear()
         self._group_sizes.clear()
         self._group_bases.clear()
@@ -148,7 +146,6 @@ class World:
 
         start = perf_counter()
         self._pending_food.clear()
-        self._pending_danger.clear()
         self._pending_pheromone.clear()
 
         sim_time = tick * self._config.time_step
@@ -185,7 +182,7 @@ class World:
                         same_group_neighbors += 1
 
             self._update_group_membership(agent, self._neighbor_agents, self._neighbor_offsets, can_form_groups)
-            desired, sensed_danger = self._compute_desired_velocity(agent, self._neighbor_agents, self._neighbor_offsets)
+            desired = self._compute_desired_velocity(agent, self._neighbor_agents, self._neighbor_offsets)
             accel = desired - agent.velocity
             accel = _clamp_length(accel, self._config.species.max_acceleration)
             agent.velocity = _clamp_length(
@@ -200,8 +197,6 @@ class World:
             agent.age += self._config.time_step
 
             births += self._apply_life_cycle(agent, len(self._neighbor_agents), same_group_neighbors, can_form_groups)
-            if agent.state == AgentState.FLEE or sensed_danger:
-                self._pending_danger.append((agent.position, self._config.environment.danger_pulse_on_flee))
 
         active_groups = self._active_group_ids()
         self._prune_group_bases(active_groups)
@@ -492,35 +487,22 @@ class World:
             if target_group != self._UNGROUPED and can_form_groups:
                 self._recruit_split_neighbors(previous_group, target_group, neighbors, neighbor_offsets)
 
-    def _compute_desired_velocity(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> tuple[Vector2, bool]:
+    def _compute_desired_velocity(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> Vector2:
         desired = ZERO
         flee_vector = ZERO
-        sensed_danger = False
-
-        danger_level = self._environment.sample_danger(agent.position)
-        if danger_level > 0.1:
-            sensed_danger = True
-            danger_gradient = self._danger_gradient(agent.position)
-            if danger_gradient.length_squared() < 1e-4:
-                danger_gradient = self._rng.next_unit_circle()
-            flee_vector = flee_vector - _safe_normalize(danger_gradient) * (
-                self._config.species.base_speed * min(1.0, danger_level)
-            )
 
         for other, offset in zip(neighbors, neighbor_offsets):
             groups_differ = agent.group_id != self._UNGROUPED and other.group_id != self._UNGROUPED and other.group_id != agent.group_id
             if groups_differ and offset.length_squared() < 4.0:
                 flee_vector = flee_vector - _safe_normalize(offset) * self._config.species.base_speed
-                sensed_danger = True
 
         if flee_vector.length_squared() > 1e-3:
             agent.state = AgentState.FLEE
-            return flee_vector, sensed_danger
+            return flee_vector
 
         food_here = self._environment.sample_food(agent.position)
         food_gradient = self._food_gradient(agent.position)
         pheromone_gradient = ZERO if agent.group_id == self._UNGROUPED else self._pheromone_gradient(agent.group_id, agent.position)
-        danger_gradient_away = self._danger_gradient(agent.position)
         group_cohesion_bias = self._group_cohesion(agent, neighbors, neighbor_offsets)
         intergroup_bias = self._intergroup_avoidance(agent, neighbors, neighbor_offsets)
         personal_space_bias = self._personal_space(neighbor_offsets)
@@ -528,7 +510,6 @@ class World:
 
         food_bias = _safe_normalize(food_gradient) if food_gradient.length_squared() > 1e-4 else ZERO
         pheromone_bias = _safe_normalize(pheromone_gradient) if pheromone_gradient.length_squared() > 1e-4 else ZERO
-        danger_bias = _safe_normalize(danger_gradient_away) if danger_gradient_away.length_squared() > 1e-4 else ZERO
 
         if agent.energy < self._config.species.reproduction_energy_threshold * 0.6 or food_here > self._config.environment.food_per_cell * 0.5 or food_gradient.length_squared() > 0.01:
             agent.state = AgentState.SEEKING_FOOD
@@ -559,8 +540,7 @@ class World:
             turn = min(1.0, boundary_proximity * self._config.boundary_turn_weight)
             inward = boundary_bias * self._config.species.base_speed
             desired = desired + (inward - desired) * turn
-        desired = desired - danger_bias * (self._config.species.base_speed * 0.2)
-        return desired, sensed_danger
+        return desired
 
     def _separation(self, agent: Agent, neighbors: List[Agent], neighbor_vectors: List[Vector2]) -> Vector2:
         if not neighbor_vectors:
@@ -753,14 +733,6 @@ class World:
         down = self._environment.sample_pheromone(self._clamp_position(position + Vector2(0, -step)), group_id)
         return Vector2(right - left, up - down)
 
-    def _danger_gradient(self, position: Vector2) -> Vector2:
-        step = self._config.cell_size
-        right = self._environment.sample_danger(self._clamp_position(position + Vector2(step, 0)))
-        left = self._environment.sample_danger(self._clamp_position(position + Vector2(-step, 0)))
-        up = self._environment.sample_danger(self._clamp_position(position + Vector2(0, step)))
-        down = self._environment.sample_danger(self._clamp_position(position + Vector2(0, -step)))
-        return Vector2(right - left, up - down)
-
     def _tick_environment(self, active_groups: Set[int]) -> None:
         env_dt = self._config.environment_tick_interval if self._config.environment_tick_interval > 1e-6 else self._config.time_step
         self._environment_accumulator += self._config.time_step
@@ -912,12 +884,9 @@ class World:
     def _apply_field_events(self) -> None:
         for pos, amt in self._pending_food:
             self._environment.add_food(pos, amt)
-        for pos, amt in self._pending_danger:
-            self._environment.add_danger(pos, amt)
         for pos, gid, amt in self._pending_pheromone:
             self._environment.add_pheromone(pos, gid, amt)
         self._pending_food.clear()
-        self._pending_danger.clear()
         self._pending_pheromone.clear()
 
     def _apply_births(self) -> None:

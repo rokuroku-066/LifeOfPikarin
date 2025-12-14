@@ -10,8 +10,6 @@ def test_pheromone_diffusion_is_bounded_and_fades():
     config = EnvironmentConfig(
         pheromone_diffusion_rate=0.5,
         pheromone_decay_rate=0.2,
-        danger_diffusion_rate=0.5,
-        danger_decay_rate=0.5,
     )
     env = EnvironmentGrid(cell_size=1.0, config=config, world_size=4.0)
 
