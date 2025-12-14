@@ -75,6 +75,8 @@ Python 製のヘッドレスランナーでステップ単位のシミュレー�
 python -m terrarium.headless --steps 3000 --seed 42 --initial 120 --max 500 --log artifacts/metrics_smoke.csv
 ```
 
+決定論的な CSV（同じ seed で 2 回回したときに完全一致させたい）を取りたい場合は `--deterministic-log` を付けてください。`tickDurationMs` は 0.000 に固定され、残りの値が同一 seed で一致します。
+
 出力される CSV のカラム例:
 
 - `tick`: シミュレーションステップ
@@ -83,7 +85,7 @@ python -m terrarium.headless --steps 3000 --seed 42 --initial 120 --max 500 --lo
 - `avgEnergy` / `avgAge`: 平均エネルギー・平均年齢
 - `groups`: グループ（群れ）数（初期は 0。未所属の個体はカウントしない）
 - `neighborChecks`: 近傍判定のカウント（O(N^2) を避けるためのヘルス指標）
-- `tickDurationMs`: 1 ステップの処理時間（ミリ秒）
+- `tickDurationMs`: 1 ステップの処理時間（ミリ秒）。壁時計時間なので通常は実行ごとに変わります（`--deterministic-log` では 0.000）。
 
 `--log` で指定したパス配下にディレクトリが無ければ自動で作成されます。主要な調整パラメータ（`terrarium.config.SimulationConfig` に対応）:
 - エネルギー上限と代謝: `EnergySoftCap`, `HighEnergyMetabolismSlope`, `MetabolismPerSecond`, `InitialEnergyFractionOfThreshold`

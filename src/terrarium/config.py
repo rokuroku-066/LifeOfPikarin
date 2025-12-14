@@ -38,7 +38,7 @@ class ResourcePatchConfig:
 @dataclass
 class EnvironmentConfig:
     food_per_cell: float = 10.0
-    food_regen_per_second: float = 0.85
+    food_regen_per_second: float = 0.9
     food_consumption_rate: float = 6.0
     food_diffusion_rate: float = 0.1
     food_decay_rate: float = 0.0
@@ -105,6 +105,11 @@ class FeedbackConfig:
     other_group_separation_weight: float = 1.6
     other_group_avoid_radius: float = 7.5
     other_group_avoid_weight: float = 1.1
+    group_base_attraction_weight: float = 0.55
+    group_base_soft_radius: float = 8.0
+    group_base_dead_zone: float = 1.2
+    min_separation_distance: float = 0.7
+    min_separation_weight: float = 2.5
 
 
 @dataclass

@@ -1321,6 +1321,186 @@ def test_ally_cohesion_weight_scales_pull():
     assert desired_high.y == approx(desired_low.y)
 
 
+def test_group_base_registered_on_group_formation_point():
+    config = SimulationConfig(
+        seed=11,
+        time_step=1.0,
+        initial_population=0,
+        boundary_margin=0.0,
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=4.0,
+            wander_jitter=0.0,
+        ),
+        feedback=FeedbackConfig(
+            group_formation_warmup_seconds=0.0,
+            group_formation_neighbor_threshold=1,
+            group_formation_chance=1.0,
+            group_cohesion_weight=0.0,
+            personal_space_weight=0.0,
+            other_group_avoid_weight=0.0,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    origin = Vector2(1.0, 1.0)
+    world.agents.extend(
+        [
+            Agent(
+                id=0,
+                generation=0,
+                group_id=world._UNGROUPED,  # type: ignore[attr-defined]
+                position=origin,
+                velocity=Vector2(),
+                energy=10.0,
+                age=0.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=1,
+                generation=0,
+                group_id=world._UNGROUPED,  # type: ignore[attr-defined]
+                position=origin + Vector2(0.5, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=0.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 2  # type: ignore[attr-defined]
+    world._next_group_id = 0  # type: ignore[attr-defined]
+    world._refresh_index_map()  # type: ignore[attr-defined]
+
+    world.step(0)
+
+    assert world.agents[0].group_id == 0
+    base = world._group_bases[0]  # type: ignore[attr-defined]
+    assert base.x == approx(origin.x)
+    assert base.y == approx(origin.y)
+
+
+def test_group_base_attraction_pulls_toward_base():
+    shared_env = EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0)
+    config = SimulationConfig(
+        seed=13,
+        time_step=1.0,
+        initial_population=0,
+        boundary_margin=0.0,
+        environment=shared_env,
+        species=SpeciesConfig(
+            base_speed=1.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+            reproduction_energy_threshold=10.0,
+            adult_age=1000.0,
+        ),
+        feedback=FeedbackConfig(
+            group_formation_warmup_seconds=0.0,
+            group_base_attraction_weight=1.0,
+            group_base_soft_radius=0.0,
+            group_base_dead_zone=0.0,
+            group_cohesion_weight=0.0,
+            ally_cohesion_weight=0.0,
+            ally_separation_weight=0.0,
+            other_group_separation_weight=0.0,
+            other_group_avoid_weight=0.0,
+            personal_space_weight=0.0,
+            min_separation_weight=0.0,
+        ),
+    )
+    world = World(config)
+    world._group_bases[0] = Vector2(0.0, 0.0)  # type: ignore[attr-defined]
+    agent = Agent(
+        id=10,
+        generation=0,
+        group_id=0,
+        position=Vector2(5.0, 0.0),
+        velocity=Vector2(),
+        energy=8.0,
+        age=0.0,
+        state=AgentState.WANDER,
+    )
+
+    desired, sensed = world._compute_desired_velocity(agent, [], [])
+
+    assert desired.x < 0.0
+    assert abs(desired.y) < 1e-6
+    assert not sensed
+
+
+def test_min_separation_term_activates_when_too_close():
+    shared_env = EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0)
+    species = SpeciesConfig(
+        base_speed=1.0,
+        max_acceleration=0.0,
+        metabolism_per_second=0.0,
+        vision_radius=0.0,
+        wander_jitter=0.0,
+    )
+    config_off = SimulationConfig(
+        seed=21,
+        time_step=1.0,
+        initial_population=0,
+        environment=shared_env,
+        species=species,
+        feedback=FeedbackConfig(
+            ally_separation_weight=0.0,
+            other_group_separation_weight=0.0,
+            min_separation_distance=1.0,
+            min_separation_weight=0.0,
+        ),
+    )
+    config_on = SimulationConfig(
+        seed=22,
+        time_step=1.0,
+        initial_population=0,
+        environment=shared_env,
+        species=species,
+        feedback=FeedbackConfig(
+            ally_separation_weight=0.0,
+            other_group_separation_weight=0.0,
+            min_separation_distance=1.0,
+            min_separation_weight=5.0,
+        ),
+    )
+
+    def compute_sep(cfg: SimulationConfig):
+        world = World(cfg)
+        agent = Agent(
+            id=0,
+            generation=0,
+            group_id=0,
+            position=Vector2(),
+            velocity=Vector2(),
+            energy=10.0,
+            age=0.0,
+            state=AgentState.WANDER,
+        )
+        neighbor = Agent(
+            id=1,
+            generation=0,
+            group_id=0,
+            position=Vector2(0.2, 0.0),
+            velocity=Vector2(),
+            energy=10.0,
+            age=0.0,
+            state=AgentState.WANDER,
+        )
+        return world._separation(agent, [neighbor], [Vector2(0.2, 0.0)])  # type: ignore[attr-defined]
+
+    sep_off = compute_sep(config_off)
+    sep_on = compute_sep(config_on)
+
+    assert sep_off.length_squared() < 1e-12
+    assert sep_on.x < 0.0
+
+
 def test_group_split_probability_scales_with_local_size():
     config = SimulationConfig(
         seed=23,

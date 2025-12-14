@@ -379,6 +379,10 @@ Guideless ALife モデルのように、事前の適応度関数を決めず、�
    * 近距離に味方が戻ればカウンターは即座に 0 へリセットされ、1〜2tickのバラつきで揺れない。
    * `group_adoption_neighbor_threshold` はグループサイズに応じて緩和され、小規模グループほど近傍 1〜2 体でも採用されやすい。採用確率も `group_adoption_small_group_bonus` で小さなグループを優遇しつつ 1.0 にクランプする。
    * Steering 側では同グループ・近距離の平均位置へ Cohesion ベクトルを追加し（重み `group_cohesion_weight`）、密集しやすさを上げる。
+   * さらに、グループが発生した瞬間の 1 点を「拠点（group base）」として固定し、同グループ個体はその拠点へ弱く引かれる（重み `group_base_attraction_weight`）。これにより「群れができる中心」が明確になり、拠点周りに定住・再集合しやすくなる。
+     * 拠点は生成時の座標を記録するだけで、描画や環境場には依存しない（Sim/View 分離・決定論を維持）。
+     * 拠点の近くでは引力を弱めるため、`group_base_dead_zone` と `group_base_soft_radius` で減衰させる。
+   * 近距離では必ず反発が勝つよう、最小分離距離 `min_separation_distance` 未満では追加の押し返しを加える（重み `min_separation_weight`）。これにより視覚的な重なりを抑える。
    * これらはすべて近傍セル内のデータだけで計算され、O(N²) を避けつつ Phase1 の「複数コロニーが自然に分かれる」誘導と整合する。
 
    **主要パラメータ（FeedbackConfig）**
@@ -390,6 +394,11 @@ Guideless ALife モデルのように、事前の適応度関数を決めず、�
    * `group_detach_after_seconds`: 孤立がこの秒数続いたら所属を弱める (default: 5.0)。
    * `group_switch_chance`: 離脱時に近傍多数派へ乗り換える確率 (default: 0.2)。
    * `group_cohesion_weight`: 速度計算における同グループ Cohesion ベクトルの重み (default: 0.6)。
+   * `group_base_attraction_weight`: 速度計算における「拠点（group base）」への引力の重み。
+   * `group_base_dead_zone`: 拠点からこの距離以内では引力 0 とする。
+   * `group_base_soft_radius`: 拠点の近距離で引力を滑らかに減衰させるための半径。
+   * `min_separation_distance`: 個体同士がこの距離未満になることを避けるための最小分離距離。
+   * `min_separation_weight`: 最小分離距離未満での追加反発の強さ。
 
 ---
 
