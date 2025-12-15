@@ -38,6 +38,33 @@ class EnvironmentGrid:
 
         self._initialize_patches()
 
+    def export_food_cells(self) -> Dict[str, object]:
+        cells = [
+            {"x": x, "y": y, "value": cell.value}
+            for (x, y), cell in self._food_cells.items()
+            if cell.value > 0.0
+        ]
+        return {"cells": cells, "resolution": self._max_index, "cell_size": self._cell_size}
+
+    def export_pheromone_field(self) -> Dict[str, object]:
+        if not self._pheromone_field:
+            return {"cells": [], "resolution": self._max_index, "cell_size": self._cell_size}
+
+        per_cell: Dict[Tuple[int, int], Tuple[float, int]] = {}
+        for (x, y, group_id), value in self._pheromone_field.items():
+            if value <= 0.0:
+                continue
+            best = per_cell.get((x, y))
+            if best is None or value > best[0]:
+                per_cell[(x, y)] = (value, group_id)
+
+        cells = [
+            {"x": x, "y": y, "value": value, "group": group_id}
+            for (x, y), (value, group_id) in per_cell.items()
+            if value > 0.0
+        ]
+        return {"cells": cells, "resolution": self._max_index, "cell_size": self._cell_size}
+
     def reset(self) -> None:
         self._food_cells.clear()
         self._food_buffer.clear()
