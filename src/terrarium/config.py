@@ -11,7 +11,7 @@ import yaml
 class SpeciesConfig:
     base_speed: float = 5.3
     max_acceleration: float = 18.0
-    vision_radius: float = 2.4
+    vision_radius: float = 1.8
     metabolism_per_second: float = 0.82
     birth_energy_cost: float = 1.0
     reproduction_energy_threshold: float = 13.5
@@ -110,7 +110,7 @@ class FeedbackConfig:
 class SimulationConfig:
     time_step: float = 1.0 / 50.0
     environment_tick_interval: float = 0.8
-    initial_population: int = 300
+    initial_population: int = 320
     max_population: int = 420
     world_size: float = 110.0
     boundary_margin: float = 10.0

@@ -153,11 +153,16 @@ class World:
         from time import perf_counter
 
         start = perf_counter()
+        config = self._config
+        species = config.species
+        feedback = config.feedback
+        dt = config.time_step
+        base_speed = species.base_speed
         self._pending_food.clear()
         self._pending_pheromone.clear()
 
-        sim_time = tick * self._config.time_step
-        can_form_groups = sim_time >= self._config.feedback.group_formation_warmup_seconds
+        sim_time = tick * dt
+        can_form_groups = sim_time >= feedback.group_formation_warmup_seconds
 
         self._grid.clear()
         self._group_sizes.clear()
@@ -192,17 +197,12 @@ class World:
             self._update_group_membership(agent, self._neighbor_agents, self._neighbor_offsets, can_form_groups)
             desired = self._compute_desired_velocity(agent, self._neighbor_agents, self._neighbor_offsets)
             accel = desired - agent.velocity
-            accel = _clamp_length(accel, self._config.species.max_acceleration)
-            agent.velocity = _clamp_length(
-                agent.velocity + accel * self._config.time_step,
-                self._config.species.base_speed,
-            )
-            new_position = agent.position + agent.velocity * self._config.time_step
-            agent.position, agent.velocity = self._reflect(
-                new_position, agent.velocity, self._config.world_size
-            )
+            accel = _clamp_length(accel, species.max_acceleration)
+            agent.velocity = _clamp_length(agent.velocity + accel * dt, base_speed)
+            new_position = agent.position + agent.velocity * dt
+            agent.position, agent.velocity = self._reflect(new_position, agent.velocity, config.world_size)
             self._update_heading(agent)
-            agent.age += self._config.time_step
+            agent.age += dt
 
             births += self._apply_life_cycle(agent, len(self._neighbor_agents), same_group_neighbors, can_form_groups)
 
@@ -529,20 +529,24 @@ class World:
                 self._recruit_split_neighbors(previous_group, target_group, neighbors, neighbor_offsets)
 
     def _compute_desired_velocity(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> Vector2:
+        species = self._config.species
+        feedback = self._config.feedback
+        environment = self._config.environment
+        base_speed = species.base_speed
         desired = ZERO
         flee_vector = ZERO
 
         for other, offset in zip(neighbors, neighbor_offsets):
             groups_differ = agent.group_id != self._UNGROUPED and other.group_id != self._UNGROUPED and other.group_id != agent.group_id
             if groups_differ and offset.length_squared() < 4.0:
-                flee_vector = flee_vector - _safe_normalize(offset) * self._config.species.base_speed
+                flee_vector = flee_vector - _safe_normalize(offset) * base_speed
 
         if flee_vector.length_squared() > 1e-3:
             agent.state = AgentState.FLEE
             return flee_vector
 
         food_here = self._environment.sample_food(agent.position)
-        food_gradient = self._food_gradient(agent.position)
+        food_gradient = ZERO
         pheromone_gradient = ZERO if agent.group_id == self._UNGROUPED else self._pheromone_gradient(agent.group_id, agent.position)
         group_cohesion_bias = self._group_cohesion(agent, neighbors, neighbor_offsets)
         group_seek_bias = self._group_seek_bias(agent, neighbors, neighbor_offsets)
@@ -550,38 +554,40 @@ class World:
         personal_space_bias = self._personal_space(neighbor_offsets)
         base_bias = self._group_base_attraction(agent)
 
-        food_bias = _safe_normalize(food_gradient) if food_gradient.length_squared() > 1e-4 else ZERO
+        food_bias = ZERO
         pheromone_bias = _safe_normalize(pheromone_gradient) if pheromone_gradient.length_squared() > 1e-4 else ZERO
 
-        if agent.energy < self._config.species.reproduction_energy_threshold * 0.6 or food_here > self._config.environment.food_per_cell * 0.5 or food_gradient.length_squared() > 0.01:
+        needs_food = agent.energy < species.reproduction_energy_threshold * 0.6 or food_here > environment.food_per_cell * 0.5
+        if needs_food:
+            food_gradient = self._food_gradient(agent.position)
+            food_bias = _safe_normalize(food_gradient) if food_gradient.length_squared() > 1e-4 else ZERO
+        if needs_food:
             agent.state = AgentState.SEEKING_FOOD
-            desired = desired + food_bias * (self._config.species.base_speed * 0.4)
-            desired = desired + self._wander_direction(agent) * (self._config.species.base_speed * 0.25)
-        elif agent.energy > self._config.species.reproduction_energy_threshold and agent.age > self._config.species.adult_age:
+            desired = desired + food_bias * (base_speed * 0.4)
+            desired = desired + self._wander_direction(agent) * (base_speed * 0.25)
+        elif agent.energy > species.reproduction_energy_threshold and agent.age > species.adult_age:
             agent.state = AgentState.SEEKING_MATE
-            desired = desired + self._cohesion(neighbor_offsets) * (self._config.species.base_speed * 0.8)
-            desired = desired + pheromone_bias * (self._config.species.base_speed * 0.25)
+            desired = desired + self._cohesion(neighbor_offsets) * (base_speed * 0.8)
+            desired = desired + pheromone_bias * (base_speed * 0.25)
         else:
             agent.state = AgentState.WANDER
-            desired = desired + self._wander_direction(agent) * (self._config.species.base_speed * self._config.species.wander_jitter)
-            desired = desired + pheromone_bias * (self._config.species.base_speed * 0.15)
+            desired = desired + self._wander_direction(agent) * (base_speed * species.wander_jitter)
+            desired = desired + pheromone_bias * (base_speed * 0.15)
 
-        desired = desired + personal_space_bias * (self._config.species.base_speed * self._config.feedback.personal_space_weight)
-        desired = desired + intergroup_bias * (self._config.species.base_speed * self._config.feedback.other_group_avoid_weight)
-        desired = desired + group_seek_bias * (self._config.species.base_speed * self._config.feedback.group_seek_weight)
-        desired = desired + self._separation(agent, neighbors, neighbor_offsets) * (self._config.species.base_speed * 1.4)
-        desired = desired + self._alignment(agent, neighbors) * (self._config.species.base_speed * 0.3)
+        desired = desired + personal_space_bias * (base_speed * feedback.personal_space_weight)
+        desired = desired + intergroup_bias * (base_speed * feedback.other_group_avoid_weight)
+        desired = desired + group_seek_bias * (base_speed * feedback.group_seek_weight)
+        desired = desired + self._separation(agent, neighbors, neighbor_offsets) * (base_speed * 1.4)
+        desired = desired + self._alignment(agent, neighbors) * (base_speed * 0.3)
         desired = desired + group_cohesion_bias * (
-            self._config.species.base_speed
-            * self._config.feedback.group_cohesion_weight
-            * self._config.feedback.ally_cohesion_weight
+            base_speed * feedback.group_cohesion_weight * feedback.ally_cohesion_weight
         )
-        desired = desired + base_bias * (self._config.species.base_speed * self._config.feedback.group_base_attraction_weight)
+        desired = desired + base_bias * (base_speed * feedback.group_base_attraction_weight)
         boundary_bias, boundary_proximity = self._boundary_avoidance(agent.position)
-        desired = desired + boundary_bias * (self._config.species.base_speed * self._config.boundary_avoidance_weight)
+        desired = desired + boundary_bias * (base_speed * self._config.boundary_avoidance_weight)
         if boundary_proximity > 0.0 and boundary_bias.length_squared() > 1e-8 and desired.length_squared() > 1e-8:
             turn = min(1.0, boundary_proximity * self._config.boundary_turn_weight)
-            inward = boundary_bias * self._config.species.base_speed
+            inward = boundary_bias * base_speed
             desired = desired + (inward - desired) * turn
         return desired
 

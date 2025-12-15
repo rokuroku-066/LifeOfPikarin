@@ -65,26 +65,39 @@ class SpatialGrid:
         """
 
         out_agents.clear()
-        out_offsets.clear()
+        offset_count = 0
         base_key = self._cell_key(position)
         cell_range = int(math.ceil(radius / self._cell_size))
         radius_sq = radius * radius
+        pos_x = position.x
+        pos_y = position.y
+
+        cells = self._cells
+        append_agent = out_agents.append
+        append_offset = out_offsets.append
 
         for dx in range(-cell_range, cell_range + 1):
             for dy in range(-cell_range, cell_range + 1):
-                key = (base_key[0] + dx, base_key[1] + dy)
-                bucket = self._cells.get(key)
+                bucket = cells.get((base_key[0] + dx, base_key[1] + dy))
                 if not bucket:
                     continue
                 for entry in bucket:
-                    if entry.agent is None:
+                    agent = entry.agent
+                    if agent is None:
                         continue
-                    if exclude_id is not None and entry.agent.id == exclude_id:
+                    if exclude_id is not None and agent.id == exclude_id:
                         continue
-                    offset = entry.position - position
-                    if offset.length_squared() <= radius_sq:
-                        out_agents.append(entry.agent)
-                        out_offsets.append(offset)
+                    offset_x = entry.position.x - pos_x
+                    offset_y = entry.position.y - pos_y
+                    if offset_x * offset_x + offset_y * offset_y <= radius_sq:
+                        append_agent(agent)
+                        if offset_count < len(out_offsets):
+                            out_offsets[offset_count].update(offset_x, offset_y)
+                        else:
+                            append_offset(Vector2(offset_x, offset_y))
+                        offset_count += 1
+
+        del out_offsets[offset_count:]
 
     def _cell_key(self, position: Vector2) -> Tuple[int, int]:
         return (int(position.x // self._cell_size), int(position.y // self._cell_size))
