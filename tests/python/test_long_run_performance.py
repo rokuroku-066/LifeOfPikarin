@@ -1,7 +1,10 @@
+import pytest
+
 from terrarium.config import SimulationConfig
 from terrarium.world import World
 
 
+@pytest.mark.config_change
 def test_long_run_population_groups_and_performance():
     config = SimulationConfig()
     world = World(config)
