@@ -110,6 +110,9 @@ class World:
         self._group_bases: Dict[int, Vector2] = {}
         self._next_id = 0
         self._next_group_id = 0
+        self._vision_radius = config.species.vision_radius
+        self._vision_radius_sq = self._vision_radius * self._vision_radius
+        self._vision_cell_offsets = self._grid.build_neighbor_cell_offsets(self._vision_radius)
         self._metrics: List[TickMetrics] = []
         self._environment_accumulator = 0.0
         self._food_regen_noise_multiplier = 1.0
@@ -147,6 +150,9 @@ class World:
         self._food_regen_noise_multiplier = 1.0
         self._food_regen_noise_target = 1.0
         self._food_regen_noise_time_to_next_sample = 0.0
+        self._vision_radius = self._config.species.vision_radius
+        self._vision_radius_sq = self._vision_radius * self._vision_radius
+        self._vision_cell_offsets = self._grid.build_neighbor_cell_offsets(self._vision_radius)
         self._bootstrap_population()
 
     def step(self, tick: int) -> TickMetrics:
@@ -179,9 +185,10 @@ class World:
             if not agent.alive:
                 continue
 
-            self._grid.collect_neighbors(
+            self._grid.collect_neighbors_precomputed(
                 agent.position,
-                self._config.species.vision_radius,
+                self._vision_cell_offsets,
+                self._vision_radius_sq,
                 self._neighbor_agents,
                 self._neighbor_offsets,
                 exclude_id=agent.id,
