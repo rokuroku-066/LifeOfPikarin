@@ -1,9 +1,10 @@
-﻿# Phase 1 ExecPlan Summary (through 2025-12-14)
-- All original ExecPlans have been moved to `.agent/plans/archive/`.
+# Phase 1 ExecPlan Summary (through 2025-12-15)
+- All ExecPlans through Phase 1 have been moved to `.agent/plans/archive/`.
 
 ## Chronological work log
 - 2024-05-05: Phase 2 snapshot signals prework. Added heading/metadata to snapshots without changing the loop; ran pytest.
 - 2024-05-19: Replaced custom Vec2 with pygame.math.Vector2, keeping behavior via safe normalize/clamp helpers; pytest passed.
+- 2024-05-21: Exported sparse food/pheromone fields in snapshots and rendered translucent overlays in the viewer; tests captured.
 - 2024-05-26: Added environment resource patches plus hazard/pheromone fields with regen/diffuse/decay ticks (reused dicts to avoid allocations). Migrated viewer to Three.js instancing, replacing the 2D canvas.
 - 2024-06-03: Formalized diffusion+decay for food/pheromone/danger fields and integrated them into AI weighting; added escape fallback when gradients are absent.
 - 2024-06-14: Refreshed viewer to perspective with lighting/shadows; server now sends velocity; client interpolation buffer smooths motion.
@@ -24,7 +25,16 @@
 - 2025-12-13: perf_smooth adds environment tick throttling, cached wander direction, vision 6/cell 3, pixel-ratio cap; 500-tick avg 12.85 ms / p95 19.3 ms.
 - 2025-12-13: group_wide_split lets lonely grouped agents bud a new group (groups 21, pop 110 at 400 ticks).
 - 2025-12-13/14: group_size_split_scaling adds size-proportional split probability plus merge cooldown/minority guard/recruit. 12k ticks (seed 42) yield average groups 42.6 in the latter half, no collapse, pytest green.
+- 2025-12-14: Improved spatial neighbor lookup by reusing grid references, logging headless timing in `artifacts/headless_neighbor_perf.csv`.
+- 2025-12-14: Tuned config for 10k headless runs (cell size, food/energy/density feedback) to cut tick_duration_ms to ~2–6 ms late-run at pop ~78.
+- 2025-12-14: Added group base anchors and stronger close-range repulsion to tighten clustering without overlap; updated configs/tests.
+- 2025-12-14: Boosted adoption for small groups by relaxing neighbor thresholds and increasing join chance; pytest verified.
+- 2025-12-14: Removed group-food spawning knobs/mechanics and scrubbed remaining references; tests stayed green.
+- 2025-12-14: Reduced stutter by trimming per-tick allocations and loop work in world/environment while keeping determinism; pytest passed.
+- 2025-12-14: Introduced deterministic climate noise multiplier for food regeneration to keep populations oscillating gently over long runs; validated with headless smoke and pytest.
+- 2025-12-14: Baseline pytest recorded ahead of removing the unused danger field system.
 - 2025-12-14: Final Phase 1 cleanup—added neighbor-threshold guard for group switching, cross-platform `npm run test:js`, pheromone pruning regression test, README/DESIGN parameter updates, ExecPlan outcomes, and a 20k-tick headless run (seed 42) logged to `artifacts/headless_20000.csv` (pop_final 499, groups_final 46, tick_ms_mean 28.9, p95 55.3).
+- 2025-12-15: Added a deterministic 5000-tick regression test with tuned configs (caps, neighbor radius, environment cadence, group dynamics) to hold peak population at 400–500, keep 5–10 groups, and keep average tick_duration_ms under 25 ms.
 
 ## Issues encountered and fixes
 - Missing dotnet SDK blocked tests -> installed .NET 8.416 on Windows and reran SimTests.
