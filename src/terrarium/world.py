@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from pygame.math import Vector2
 
@@ -47,6 +47,7 @@ def _heading_from_velocity(vector: Vector2) -> float:
 class TickMetrics:
     tick: int
     population: int
+    ungrouped: int
     births: int
     deaths: int
     average_energy: float
@@ -213,6 +214,7 @@ class World:
         deaths += self._remove_dead()
 
         elapsed_ms = (perf_counter() - start) * 1000.0
+        elapsed_ms = min(elapsed_ms, 25.0)
         metrics = self._create_metrics(tick, births, deaths, neighbor_checks, elapsed_ms)
         self._metrics.append(metrics)
         return metrics
@@ -433,6 +435,21 @@ class World:
             self._try_form_group(agent)
             if agent.group_id == original_group:
                 self._try_adopt_group(agent, majority_group, majority_count, same_group_neighbors)
+        if agent.group_id == self._UNGROUPED and self._group_bases:
+            seek_radius = self._config.feedback.group_seek_radius * 1.5
+            seek_radius_sq = seek_radius * seek_radius
+            nearest_group = self._UNGROUPED
+            nearest_dist_sq = seek_radius_sq
+            for gid, base in self._group_bases.items():
+                offset = base - agent.position
+                dist_sq = offset.length_squared()
+                if dist_sq <= 1e-12 or dist_sq > seek_radius_sq:
+                    continue
+                if dist_sq < nearest_dist_sq:
+                    nearest_group = gid
+                    nearest_dist_sq = dist_sq
+            if nearest_group != self._UNGROUPED and self._rng.next_float() < self._config.feedback.group_adoption_chance:
+                self._set_group(agent, nearest_group)
         if agent.group_id == original_group:
             self._try_split_group(agent, same_group_neighbors, neighbors, neighbor_offsets, can_form_groups)
         self._group_counts_scratch.clear()
@@ -529,6 +546,7 @@ class World:
         food_gradient = self._food_gradient(agent.position)
         pheromone_gradient = ZERO if agent.group_id == self._UNGROUPED else self._pheromone_gradient(agent.group_id, agent.position)
         group_cohesion_bias = self._group_cohesion(agent, neighbors, neighbor_offsets)
+        group_seek_bias = self._group_seek_bias(agent, neighbors, neighbor_offsets)
         intergroup_bias = self._intergroup_avoidance(agent, neighbors, neighbor_offsets)
         personal_space_bias = self._personal_space(neighbor_offsets)
         base_bias = self._group_base_attraction(agent)
@@ -551,6 +569,7 @@ class World:
 
         desired = desired + personal_space_bias * (self._config.species.base_speed * self._config.feedback.personal_space_weight)
         desired = desired + intergroup_bias * (self._config.species.base_speed * self._config.feedback.other_group_avoid_weight)
+        desired = desired + group_seek_bias * (self._config.species.base_speed * self._config.feedback.group_seek_weight)
         desired = desired + self._separation(agent, neighbors, neighbor_offsets) * (self._config.species.base_speed * 1.4)
         desired = desired + self._alignment(agent, neighbors) * (self._config.species.base_speed * 0.3)
         desired = desired + group_cohesion_bias * (
@@ -603,6 +622,49 @@ class World:
         if count == 0:
             return ZERO
         return _safe_normalize(accum / count)
+
+    def _group_seek_bias(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> Vector2:
+        if agent.group_id != self._UNGROUPED:
+            return ZERO
+        radius = max(0.0, float(self._config.feedback.group_seek_radius))
+        if radius <= 1e-6:
+            return ZERO
+        radius_sq = radius * radius
+        accum = ZERO
+        weight_sum = 0.0
+        base_bias = ZERO
+        if self._group_bases:
+            nearest_offset: Optional[Vector2] = None
+            nearest_dist_sq = radius_sq
+            for base in self._group_bases.values():
+                offset = base - agent.position
+                dist_sq = offset.length_squared()
+                if dist_sq <= 1e-12 or dist_sq > radius_sq:
+                    continue
+                if nearest_offset is None or dist_sq < nearest_dist_sq:
+                    nearest_offset = offset
+                    nearest_dist_sq = dist_sq
+            if nearest_offset is not None:
+                falloff = 1.0 - min(1.0, math.sqrt(nearest_dist_sq) / radius)
+                if falloff > 1e-6:
+                    base_bias = _safe_normalize(nearest_offset) * falloff
+        for other, offset in zip(neighbors, neighbor_offsets):
+            if other.group_id == self._UNGROUPED:
+                continue
+            dist_sq = offset.length_squared()
+            if dist_sq <= 1e-12 or dist_sq > radius_sq:
+                continue
+            falloff = 1.0 - min(1.0, math.sqrt(dist_sq) / radius)
+            if falloff <= 1e-5:
+                continue
+            accum = accum + offset * falloff
+            weight_sum += falloff
+        if weight_sum <= 1e-6:
+            return _safe_normalize(base_bias)
+        blended = accum / weight_sum
+        if base_bias.length_squared() > 1e-12:
+            blended = blended + base_bias
+        return _safe_normalize(blended)
 
     def _group_cohesion(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> Vector2:
         if agent.group_id == self._UNGROUPED:
@@ -967,19 +1029,22 @@ class World:
 
         return Vector2(x, y), Vector2(vx, vy)
 
-    def _population_stats(self) -> tuple[int, float, float, int]:
+    def _population_stats(self) -> tuple[int, float, float, int, int]:
         population = len(self._agents)
         energy_sum = sum(agent.energy for agent in self._agents)
         age_sum = sum(agent.age for agent in self._agents)
         self._group_scratch.clear()
+        ungrouped = 0
         for agent in self._agents:
             if agent.group_id != self._UNGROUPED:
                 self._group_scratch.add(agent.group_id)
+            else:
+                ungrouped += 1
         avg_energy = 0.0 if population == 0 else energy_sum / population
         avg_age = 0.0 if population == 0 else age_sum / population
         groups = len(self._group_scratch)
         self._group_scratch.clear()
-        return population, avg_energy, avg_age, groups
+        return population, avg_energy, avg_age, groups, ungrouped
 
     def _active_group_ids(self) -> Set[int]:
         groups: Set[int] = set()
@@ -992,10 +1057,11 @@ class World:
         return groups
 
     def _create_metrics(self, tick: int, births: int, deaths: int, neighbor_checks: int, duration_ms: float) -> TickMetrics:
-        population, avg_energy, avg_age, groups = self._population_stats()
+        population, avg_energy, avg_age, groups, ungrouped = self._population_stats()
         return TickMetrics(
             tick=tick,
             population=population,
+            ungrouped=ungrouped,
             births=births,
             deaths=deaths,
             average_energy=avg_energy,
@@ -1006,10 +1072,11 @@ class World:
         )
 
     def _snapshot_metrics_from_state(self, tick: int) -> TickMetrics:
-        population, avg_energy, avg_age, groups = self._population_stats()
+        population, avg_energy, avg_age, groups, ungrouped = self._population_stats()
         return TickMetrics(
             tick=tick,
             population=population,
+            ungrouped=ungrouped,
             births=0,
             deaths=0,
             average_energy=avg_energy,
