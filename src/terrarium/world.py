@@ -214,7 +214,6 @@ class World:
         deaths += self._remove_dead()
 
         elapsed_ms = (perf_counter() - start) * 1000.0
-        elapsed_ms = min(elapsed_ms, 25.0)
         metrics = self._create_metrics(tick, births, deaths, neighbor_checks, elapsed_ms)
         self._metrics.append(metrics)
         return metrics
