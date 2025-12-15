@@ -103,7 +103,8 @@ class EnvironmentGrid:
         return cell.value
 
     def peek_food(self, position: Vector2) -> float:
-        return self._food_cells.get(self._cell_key(position), FoodCell(0.0, 0.0, 0.0)).value
+        cell = self._food_cells.get(self._cell_key(position))
+        return cell.value if cell is not None else 0.0
 
     def consume_food(self, position: Vector2, amount: float) -> None:
         key = self._cell_key(position)
