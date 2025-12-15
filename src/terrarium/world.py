@@ -330,6 +330,9 @@ class World:
             return
         self._group_bases[group_id] = Vector2(position)
 
+    def _group_limit_reached(self) -> bool:
+        return len(self._group_bases) >= self._config.feedback.max_groups
+
     def _prune_group_bases(self, active_groups: Set[int]) -> None:
         if not self._group_bases:
             return
@@ -413,7 +416,11 @@ class World:
                 ):
                     self._set_group(agent, switch_group)
                 else:
-                    if can_form_groups and self._rng.next_float() < self._config.feedback.group_detach_new_group_chance:
+                    if (
+                        can_form_groups
+                        and not self._group_limit_reached()
+                        and self._rng.next_float() < self._config.feedback.group_detach_new_group_chance
+                    ):
                         new_group = self._next_group_id
                         self._next_group_id += 1
                         self._register_group_base(new_group, agent.position)
@@ -433,6 +440,8 @@ class World:
 
     def _try_form_group(self, agent: Agent) -> None:
         if agent.group_id != self._UNGROUPED:
+            return
+        if self._group_limit_reached():
             return
         if len(self._ungrouped_neighbors) < self._config.feedback.group_formation_neighbor_threshold:
             return
@@ -491,7 +500,11 @@ class World:
         if self._rng.next_float() < split_chance:
             previous_group = agent.group_id
             target_group = self._UNGROUPED
-            if can_form_groups and self._rng.next_float() < self._config.feedback.group_split_new_group_chance:
+            if (
+                can_form_groups
+                and not self._group_limit_reached()
+                and self._rng.next_float() < self._config.feedback.group_split_new_group_chance
+            ):
                 target_group = self._next_group_id
                 self._next_group_id += 1
                 self._register_group_base(target_group, agent.position)
@@ -880,13 +893,19 @@ class World:
         if not can_create_groups:
             return group_id
         if group_id == self._UNGROUPED:
-            if self._rng.next_float() < self._config.feedback.group_birth_seed_chance:
+            if (
+                not self._group_limit_reached()
+                and self._rng.next_float() < self._config.feedback.group_birth_seed_chance
+            ):
                 new_group = self._next_group_id
                 self._next_group_id += 1
                 self._register_group_base(new_group, position)
                 return new_group
             return self._UNGROUPED
-        if self._rng.next_float() < self._config.feedback.group_mutation_chance:
+        if (
+            not self._group_limit_reached()
+            and self._rng.next_float() < self._config.feedback.group_mutation_chance
+        ):
             new_group = self._next_group_id
             self._next_group_id += 1
             self._register_group_base(new_group, position)
