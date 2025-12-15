@@ -63,6 +63,7 @@ class Snapshot:
     agents: List[Dict[str, Any]]
     world: "SnapshotWorld"
     metadata: "SnapshotMetadata"
+    fields: "SnapshotFields"
 
 
 @dataclass
@@ -77,6 +78,12 @@ class SnapshotMetadata:
     tick_rate: float
     seed: int
     config_version: str
+
+
+@dataclass
+class SnapshotFields:
+    food: Dict[str, Any]
+    pheromones: Dict[str, Any]
 
 
 class World:
@@ -220,12 +227,17 @@ class World:
             seed=self._config.seed,
             config_version=self._config.config_version,
         )
+        fields = SnapshotFields(
+            food=self._environment.export_food_cells(),
+            pheromones=self._environment.export_pheromone_field(),
+        )
         return Snapshot(
             tick=tick,
             metrics=metrics,
             agents=agents_payload,
             world=SnapshotWorld(size=self._config.world_size),
             metadata=metadata,
+            fields=fields,
         )
 
     def _bootstrap_population(self) -> None:
