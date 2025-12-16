@@ -73,6 +73,7 @@ const targetFps = 45;
 const minFrameInterval = 1000 / targetFps;
 let lastRenderTime = 0;
 let lastRenderMs = 0;
+let pendingPixelRatio = null;
 let resizeObserver = null;
 let headerObserver = null;
 
@@ -292,7 +293,9 @@ function setPovCameraProjection(viewport) {
 
 function animate(now) {
   requestAnimationFrame(animate);
-  if (now - lastRenderTime < minFrameInterval) {
+  const appliedPixelRatio = applyPendingPixelRatio();
+  const shouldRender = appliedPixelRatio || now - lastRenderTime >= minFrameInterval;
+  if (!shouldRender) {
     return;
   }
   lastRenderTime = now;
@@ -328,11 +331,8 @@ function watchResize() {
     const mq = window.matchMedia(dprQuery);
     if (mq?.addEventListener) {
       mq.addEventListener('change', () => {
-        if (renderer) {
-          const pixelRatio = Math.min(window.devicePixelRatio ?? 1, 1.3);
-          renderer.setPixelRatio(pixelRatio);
-        }
-        layoutDirty = true;
+        const pixelRatio = Math.min(window.devicePixelRatio ?? 1, 1.3);
+        requestPixelRatio(pixelRatio);
       });
     }
   }
@@ -540,6 +540,26 @@ function updateView(now) {
   renderViews(trackedPose);
 }
 
+function requestPixelRatio(next) {
+  if (!renderer) return;
+  const clamped = Math.min(1.3, Math.max(1.0, next));
+  const current = renderer.getPixelRatio();
+  if (Math.abs(clamped - current) < 1e-4 && pendingPixelRatio === null) return;
+  pendingPixelRatio = clamped;
+  layoutDirty = true;
+}
+
+function applyPendingPixelRatio() {
+  if (pendingPixelRatio === null || !renderer) return false;
+  ensureLayout();
+  if (viewports) {
+    renderer.setPixelRatio(pendingPixelRatio);
+    renderer.setSize(viewports.full.width, viewports.full.height, false);
+  }
+  pendingPixelRatio = null;
+  return true;
+}
+
 function adjustPixelRatioIfNeeded() {
   if (!renderer || !viewports) return;
   const current = renderer.getPixelRatio();
@@ -547,16 +567,10 @@ function adjustPixelRatioIfNeeded() {
   const plentyFast = lastRenderMs < 12 && current < 1.25;
   if (tooSlow) {
     const next = Math.max(1.0, current - 0.1);
-    if (next !== current) {
-      renderer.setPixelRatio(next);
-      renderer.setSize(viewports.full.width, viewports.full.height, false);
-    }
+    requestPixelRatio(next);
   } else if (plentyFast) {
     const next = Math.min(1.3, current + 0.05);
-    if (next !== current) {
-      renderer.setPixelRatio(next);
-      renderer.setSize(viewports.full.width, viewports.full.height, false);
-    }
+    requestPixelRatio(next);
   }
 }
 
