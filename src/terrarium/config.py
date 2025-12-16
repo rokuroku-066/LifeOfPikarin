@@ -68,12 +68,10 @@ class FeedbackConfig:
     base_death_probability_per_second: float = 0.0012
     age_death_probability_per_second: float = 0.00035
     density_death_probability_per_neighbor_per_second: float = 0.00025
-    global_population_pressure_start: int = 200
-    global_population_pressure_slope: float = 0.04
-    global_population_pressure_delay_seconds: float = 14.0
-    post_warmup_population_cap: int = 0
+    global_population_pressure_start: int = 230
+    global_population_pressure_slope: float = 0.2
+    global_population_pressure_delay_seconds: float = 4.0
     population_peak_threshold: int = 400
-    post_peak_population_cap: int = 30
     post_peak_min_groups: int = 5
     post_peak_max_groups: int = 10
     post_peak_group_seed_size: int = 4
