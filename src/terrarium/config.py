@@ -11,11 +11,11 @@ import yaml
 class SpeciesConfig:
     base_speed: float = 6.0
     max_acceleration: float = 20.0
-    vision_radius: float = 4.0
+    vision_radius: float = 3.0
     metabolism_per_second: float = 1.0
     birth_energy_cost: float = 3.0
-    reproduction_energy_threshold: float = 12.8
-    adult_age: float = 6.0
+    reproduction_energy_threshold: float = 12.3
+    adult_age: float = 5.0
     initial_age_min: float = 0.5
     initial_age_max: float = 0.0
     max_age: float = 80.0
@@ -37,8 +37,8 @@ class ResourcePatchConfig:
 
 @dataclass
 class EnvironmentConfig:
-    food_per_cell: float = 9.0
-    food_regen_per_second: float = 0.7
+    food_per_cell: float = 7.8
+    food_regen_per_second: float = 0.72
     food_consumption_rate: float = 6.0
     food_diffusion_rate: float = 0.1
     food_decay_rate: float = 0.0
@@ -65,12 +65,15 @@ class FeedbackConfig:
     stress_drain_per_neighbor: float = 0.02
     disease_probability_per_neighbor: float = 0.002
     density_reproduction_slope: float = 0.03
-    base_death_probability_per_second: float = 0.0012
-    age_death_probability_per_second: float = 0.00035
-    density_death_probability_per_neighbor_per_second: float = 0.00025
-    global_population_pressure_start: int = 230
-    global_population_pressure_slope: float = 0.2
+    base_death_probability_per_second: float = 0.0009
+    age_death_probability_per_second: float = 0.00025
+    density_death_probability_per_neighbor_per_second: float = 0.00015
+    global_population_pressure_start: int = 260
+    global_population_pressure_slope: float = 0.0045
     global_population_pressure_delay_seconds: float = 4.0
+    birth_pressure_slope: float = 0.011
+    post_peak_target_population: int = 180
+    post_peak_prune_per_tick: int = 4
     population_peak_threshold: int = 400
     post_peak_min_groups: int = 5
     post_peak_max_groups: int = 10
@@ -78,7 +81,7 @@ class FeedbackConfig:
     max_groups: int = 64
     group_formation_warmup_seconds: float = 0.0
     group_formation_neighbor_threshold: int = 3
-    group_formation_chance: float = 0.07
+    group_formation_chance: float = 0.05
     group_adoption_neighbor_threshold: int = 1
     group_adoption_chance: float = 0.5
     group_adoption_small_group_bonus: float = 0.4
@@ -86,19 +89,19 @@ class FeedbackConfig:
     group_food_spawn_chance: float = 0.1
     group_food_spawn_amount: float = 2.0
     group_split_neighbor_threshold: int = 5
-    group_split_chance: float = 0.008
+    group_split_chance: float = 0.006
     group_split_size_bonus_per_neighbor: float = 0.01
     group_split_chance_max: float = 0.2
     group_split_size_stress_weight: float = 0.001
     group_split_recruitment_count: int = 3
-    group_split_new_group_chance: float = 0.05
+    group_split_new_group_chance: float = 0.02
     group_split_stress_threshold: float = 0.12
     group_merge_cooldown_seconds: float = 1.0
     group_adoption_guard_min_allies: int = 2
     group_reproduction_penalty_per_ally: float = 0.03
     group_reproduction_min_factor: float = 0.08
-    group_birth_seed_chance: float = 0.03
-    group_mutation_chance: float = 0.005
+    group_birth_seed_chance: float = 0.02
+    group_mutation_chance: float = 0.003
     personal_space_radius: float = 1.1
     personal_space_weight: float = 2.2
     group_cohesion_radius: float = 4.0
@@ -106,7 +109,7 @@ class FeedbackConfig:
     group_detach_close_neighbor_threshold: int = 2
     group_detach_after_seconds: float = 4.5
     group_switch_chance: float = 0.4
-    group_detach_new_group_chance: float = 0.01
+    group_detach_new_group_chance: float = 0.005
     group_cohesion_weight: float = 3.2
     ally_cohesion_weight: float = 1.6
     ally_separation_weight: float = 0.4
@@ -125,8 +128,8 @@ class FeedbackConfig:
 @dataclass
 class SimulationConfig:
     time_step: float = 1.0 / 50.0
-    environment_tick_interval: float = 2.0
-    initial_population: int = 260
+    environment_tick_interval: float = 5.5
+    initial_population: int = 245
     max_population: int = 700
     world_size: float = 100.0
     boundary_margin: float = 10.0
