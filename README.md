@@ -96,7 +96,7 @@ python -m terrarium.headless --steps 5000 --seed 42 --log artifacts/metrics_smok
 - 寿命/密度死亡: `base_death_probability_per_second`, `age_death_probability_per_second`, `density_death_probability_per_neighbor_per_second`
 - 環境フィールド: `food_regen_per_second`, `food_from_death`, `pheromone_diffusion_rate` / `pheromone_decay_rate`, `pheromone_deposit_on_birth`
 - フィールド更新頻度: `environment_tick_interval`（既定 0.36 秒）。食料/フェロモン等の拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
-- 初期/最大個体数: `initial_population`（既定 260）, `max_population`（既定 400）
+- 初期/最大個体数: `initial_population`（既定 260）, `max_population`（既定 700）。初期ブートストラップモードは廃止し、最初の tick から SpatialGrid で近傍を構築しつつ通常の群形成/フィードバックを適用します。
 - 境界バイアス: `boundary_margin` 内では `boundary_avoidance_weight` で内側へ押し戻し、`boundary_turn_weight` で進行方向を内向きに寄せ、反射境界と併用して滑らかに折り返します。
 - ランダム歩行の更新周期: `wander_refresh_seconds`（既定 0.14 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
 - 近距離の押し返し: `personal_space_radius`, `personal_space_weight`, `min_separation_distance`, `min_separation_weight`

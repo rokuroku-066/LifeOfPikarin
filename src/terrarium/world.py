@@ -174,21 +174,17 @@ class World:
 
         sim_time = tick * self._config.time_step
         can_form_groups = sim_time >= self._config.feedback.group_formation_warmup_seconds
-        bootstrap_mode = (
-            self._config.initial_population >= 50
-            and self._max_population_seen < self._config.feedback.population_peak_threshold
-        )
 
         self._group_sizes.clear()
         current_population = len(self._agents)
         if current_population > self._max_population_seen:
             self._max_population_seen = current_population
-        if not bootstrap_mode:
-            self._grid.clear()
-            for agent in self._agents:
-                if agent.group_id >= 0:
-                    self._group_sizes[agent.group_id] = self._group_sizes.get(agent.group_id, 0) + 1
-                self._grid.insert(agent.id, agent.position, agent)
+
+        self._grid.clear()
+        for agent in self._agents:
+            if agent.group_id >= 0:
+                self._group_sizes[agent.group_id] = self._group_sizes.get(agent.group_id, 0) + 1
+            self._grid.insert(agent.id, agent.position, agent)
 
         neighbor_checks = 0
         births = 0
@@ -202,40 +198,33 @@ class World:
             same_group_neighbors = 0
             close_allies = 0
             original_group = agent.group_id
-            if not bootstrap_mode:
-                self._grid.collect_neighbors(
-                    agent.position,
-                    self._config.species.vision_radius,
-                    self._neighbor_agents,
-                    self._neighbor_offsets,
-                    exclude_id=agent.id,
-                )
-                neighbor_checks += len(self._neighbor_agents)
-                if original_group != self._UNGROUPED:
+
+            self._grid.collect_neighbors(
+                agent.position,
+                self._config.species.vision_radius,
+                self._neighbor_agents,
+                self._neighbor_offsets,
+                exclude_id=agent.id,
+            )
+            neighbor_checks += len(self._neighbor_agents)
+            if original_group != self._UNGROUPED:
+                for other, offset in zip(self._neighbor_agents, self._neighbor_offsets):
+                    if other.group_id == original_group:
+                        same_group_neighbors += 1
+                        if cluster_radius_sq > 1e-9 and offset.length_squared() <= cluster_radius_sq:
+                            close_allies += 1
+
+            self._update_group_membership(agent, self._neighbor_agents, self._neighbor_offsets, can_form_groups)
+            if agent.group_id != original_group:
+                close_allies = 0
+                if agent.group_id != self._UNGROUPED and cluster_radius_sq > 1e-9:
                     for other, offset in zip(self._neighbor_agents, self._neighbor_offsets):
-                        if other.group_id == original_group:
-                            same_group_neighbors += 1
-                            if cluster_radius_sq > 1e-9 and offset.length_squared() <= cluster_radius_sq:
-                                close_allies += 1
+                        if other.group_id == agent.group_id and offset.length_squared() <= cluster_radius_sq:
+                            close_allies += 1
 
-                self._update_group_membership(agent, self._neighbor_agents, self._neighbor_offsets, can_form_groups)
-                if agent.group_id != original_group:
-                    close_allies = 0
-                    if agent.group_id != self._UNGROUPED and cluster_radius_sq > 1e-9:
-                        for other, offset in zip(self._neighbor_agents, self._neighbor_offsets):
-                            if other.group_id == agent.group_id and offset.length_squared() <= cluster_radius_sq:
-                                close_allies += 1
-            else:
-                self._neighbor_agents.clear()
-                self._neighbor_offsets.clear()
-
-            if bootstrap_mode:
-                desired = self._bootstrap_desired_velocity(agent)
-                sensed_danger = False
-            else:
-                desired, sensed_danger = self._compute_desired_velocity(
-                    agent, self._neighbor_agents, self._neighbor_offsets, return_sensed=True
-                )
+            desired, sensed_danger = self._compute_desired_velocity(
+                agent, self._neighbor_agents, self._neighbor_offsets, return_sensed=True
+            )
             accel = desired - agent.velocity
             accel = _clamp_length(accel, species.max_acceleration)
             agent.velocity = _clamp_length(agent.velocity + accel * dt, base_speed)
@@ -594,14 +583,6 @@ class World:
         if amount <= 0.0:
             return
         self._pending_group_food.append((agent.position, agent.group_id, amount))
-
-    def _bootstrap_desired_velocity(self, agent: Agent) -> Vector2:
-        desired = self._wander_direction(agent) * (
-            self._config.species.base_speed * self._config.species.wander_jitter
-        )
-        boundary_bias, _ = self._boundary_avoidance(agent.position)
-        desired = desired + boundary_bias * (self._config.species.base_speed * self._config.boundary_avoidance_weight)
-        return desired
 
     def _compute_desired_velocity(
         self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2], return_sensed: bool = False
