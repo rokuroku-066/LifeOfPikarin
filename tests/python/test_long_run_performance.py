@@ -12,18 +12,34 @@ def test_long_run_population_groups_and_performance():
         world.step(tick)
 
     populations = [m.population for m in world.metrics]
-    max_population = max(populations)
-    peak_idx = populations.index(max_population)
-    post_peak_min = min(populations[peak_idx:])
-    trailing_window = populations[-1000:]
+    births = [m.births for m in world.metrics]
+    deaths = [m.deaths for m in world.metrics]
     average_tick_ms = sum(m.tick_duration_ms for m in world.metrics) / len(world.metrics)
     final_metrics = world.metrics[-1]
     final_groups = final_metrics.groups
+    max_deaths_per_tick = max(deaths)
 
-    assert 400 <= max_population
-    assert post_peak_min >= max_population * 0.15
-    assert final_metrics.population >= max_population * 0.15
-    assert len(set(trailing_window)) > 5
-    assert config.feedback.post_peak_min_groups <= final_groups <= config.feedback.max_groups
-    assert average_tick_ms <= 35.0
-    assert final_metrics.ungrouped <= final_metrics.population * 0.25
+    zero_birth_streak = 0
+    worst_zero_birth_streak = 0
+    for value in births:
+        if value == 0:
+            zero_birth_streak += 1
+            worst_zero_birth_streak = max(worst_zero_birth_streak, zero_birth_streak)
+        else:
+            zero_birth_streak = 0
+
+    summary = (
+        f"final_pop={final_metrics.population}, "
+        f"final_groups={final_groups}, "
+        f"ungrouped={final_metrics.ungrouped}, "
+        f"avg_tick_ms={average_tick_ms:.2f}, "
+        f"max_deaths_per_tick={max_deaths_per_tick}, "
+        f"worst_zero_birth_streak={worst_zero_birth_streak}"
+    )
+
+    assert final_metrics.population >= 250, summary
+    assert 5 <= final_groups <= 10, summary
+    assert final_metrics.ungrouped < final_metrics.population * 0.25, summary
+    assert average_tick_ms <= 35.0, summary
+    assert max_deaths_per_tick <= 10, summary
+    assert worst_zero_birth_streak < 20, summary

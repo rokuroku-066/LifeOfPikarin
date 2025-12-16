@@ -118,6 +118,7 @@ class World:
         self._food_regen_noise_multiplier = 1.0
         self._food_regen_noise_target = 1.0
         self._food_regen_noise_time_to_next_sample = 0.0
+        self._refresh_vision_cache()
         self._bootstrap_population()
 
     @property
@@ -153,9 +154,7 @@ class World:
         self._food_regen_noise_multiplier = 1.0
         self._food_regen_noise_target = 1.0
         self._food_regen_noise_time_to_next_sample = 0.0
-        self._vision_radius = self._config.species.vision_radius
-        self._vision_radius_sq = self._vision_radius * self._vision_radius
-        self._vision_cell_offsets = self._grid.build_neighbor_cell_offsets(self._vision_radius)
+        self._refresh_vision_cache()
         self._bootstrap_population()
 
     def step(self, tick: int) -> TickMetrics:
@@ -191,6 +190,9 @@ class World:
         deaths = 0
         cluster_radius_sq = self._config.feedback.group_cohesion_radius * self._config.feedback.group_cohesion_radius
 
+        vision_cell_offsets = self._vision_cell_offsets
+        vision_radius_sq = self._vision_radius_sq
+
         for agent in self._agents:
             if not agent.alive:
                 continue
@@ -199,9 +201,10 @@ class World:
             close_allies = 0
             original_group = agent.group_id
 
-            self._grid.collect_neighbors(
+            self._grid.collect_neighbors_precomputed(
                 agent.position,
-                self._config.species.vision_radius,
+                vision_cell_offsets,
+                vision_radius_sq,
                 self._neighbor_agents,
                 self._neighbor_offsets,
                 exclude_id=agent.id,
@@ -304,6 +307,11 @@ class World:
             )
             self._agents.append(agent)
             self._next_id += 1
+
+    def _refresh_vision_cache(self) -> None:
+        self._vision_radius = self._config.species.vision_radius
+        self._vision_radius_sq = self._vision_radius * self._vision_radius
+        self._vision_cell_offsets = self._grid.build_neighbor_cell_offsets(self._vision_radius)
 
     def _sample_initial_age(self) -> float:
         min_age = max(0.0, self._config.species.initial_age_min)

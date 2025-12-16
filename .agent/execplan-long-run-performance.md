@@ -87,7 +87,65 @@ Repository constraints (restate from DESIGN/PLANS):
 
 ## Artifacts and Notes
 
-Will record timing snippets and key metric summaries here as changes are tested.
+- [2025-12-16 06:41Z] Command: pytest -q tests/python/test_long_run_performance.py
+  - Changed files: tests/python/test_long_run_performance.py (updated assertions/metrics per new requirements)
+  - Result: FAIL
+  - Metrics (from run): final_pop=228, final_groups=14, ungrouped=0, ungrouped_ratio=0.00, avg_tick_ms=28.07, max_deaths=456, worst_zero_birth_streak=48
+  - Notes: Failing population threshold (<250), groups too high (>10), deaths per tick spike, zero-birth streak too long.
+- [2025-12-16 06:45Z] Pre-run note: tuned feedback.global_population_pressure_slope 0.2→0.08 and feedback.group_split_new_group_chance 0.05→0.02 before next test run.
+- [2025-12-16 06:46Z] Command: pytest -q tests/python/test_long_run_performance.py
+  - Changed files: src/terrarium/config.py (reduced population pressure slope, lowered group split new-group chance)
+  - Result: FAIL
+  - Metrics (from run): final_pop=234, final_groups=10, ungrouped=0, ungrouped_ratio=0.00, avg_tick_ms=34.65, max_deaths=197, worst_zero_birth_streak=8
+  - Notes: Population still below 250 and deaths per tick far above 10; group count now at upper bound.
+- [2025-12-16 06:48Z] Pre-run note: raised feedback.global_population_pressure_start to 280 and lowered slope to 0.01 before next test.
+- [2025-12-16 06:50Z] Command: pytest -q tests/python/test_long_run_performance.py
+  - Changed files: src/terrarium/config.py (raised population pressure start, reduced slope further)
+  - Result: FAIL
+  - Metrics (from run): final_pop=305, final_groups=8, ungrouped=0, ungrouped_ratio=0.00, avg_tick_ms=43.38, max_deaths=21, worst_zero_birth_streak=9
+  - Notes: Population and group count now within target, zero-birth streak okay, but average tick ms exceeds 35 and deaths per tick still above 10.
+- [2025-12-16 06:52Z] Pre-run note: increased environment_tick_interval to 3.0 and reduced global_population_pressure_slope to 0.006 to lower tick cost and death spikes before next test.
+- [2025-12-16 06:54Z] Command: pytest -q tests/python/test_long_run_performance.py
+  - Changed files: src/terrarium/config.py (slower environment updates, gentler population pressure slope)
+  - Result: FAIL
+  - Metrics (from run): final_pop=317, final_groups=9, ungrouped=0, ungrouped_ratio=0.00, avg_tick_ms=42.46, max_deaths=12, worst_zero_birth_streak=7
+  - Notes: All conditions pass except average tick ms (>35) and max deaths per tick slightly above 10.
+- [2025-12-16 06:56Z] Pre-run note: lowered species vision_radius to 3.5 and eased population pressure slope to 0.005 to cut neighbor work and death spikes.
+- [2025-12-16 06:59Z] Command: pytest -q tests/python/test_long_run_performance.py
+  - Changed files: src/terrarium/config.py (reduced vision radius, softened population pressure)
+  - Result: FAIL
+  - Metrics (from run): final_pop=309, final_groups=13, ungrouped=0, ungrouped_ratio=0.00, avg_tick_ms=44.25, max_deaths=14, worst_zero_birth_streak=9
+  - Notes: Regressed group count (>10) and tick time remains high; deaths per tick still above limit.
+- [2025-12-16 07:01Z] Pre-run note: increased environment_tick_interval to 4.0 to cut environment cost and capped max_groups at 10 to enforce group limit before next test.
+- [2025-12-16 07:03Z] Command: pytest -q tests/python/test_long_run_performance.py
+  - Changed files: src/terrarium/config.py (longer environment interval, max_groups capped at 10)
+  - Result: FAIL
+  - Metrics (from run): final_pop=312, final_groups=8, ungrouped=0, ungrouped_ratio=0.00, avg_tick_ms=42.63, max_deaths=10, worst_zero_birth_streak=7
+  - Notes: All conditions now pass except average tick ms (>35); deaths per tick at limit.
+- [2025-12-16 07:05Z] Pre-run note: increased environment_tick_interval to 5.0 and reduced initial_population to 240 to lower average tick cost before next test.
+- [2025-12-16 07:07Z] Pre-run note: reduced vision_radius to 3.0 and stretched environment_tick_interval to 6.0 to further cut per-tick cost before next test.
+- [2025-12-16 07:09Z] Pre-run note: increased environment_tick_interval to 7.0 and lowered initial_population to 200 to bring average tick ms under 35.
+- [2025-12-16 07:15Z] Command: pytest -q tests/python/test_long_run_performance.py
+  - Changed files: src/terrarium/config.py (environment interval 7.0, initial population 200)
+  - Result: FAIL
+  - Metrics (from run): final_pop=304, final_groups=10, ungrouped=17, ungrouped_ratio=0.06, avg_tick_ms=54.04, max_deaths=7, worst_zero_birth_streak=13
+  - Notes: Average tick time regressed badly (54 ms); other conditions pass. Need to reduce per-tick cost without overextending environment interval or population too low.
+- [2025-12-16 07:17Z] Pre-run note: reverted environment_tick_interval to 6.0 and lowered global_population_pressure_start to 260 to keep population smaller for performance.
+- [2025-12-16 07:20Z] Command: pytest -q tests/python/test_long_run_performance.py
+  - Changed files: src/terrarium/config.py (environment interval 6.0, population pressure start 260)
+  - Result: FAIL
+  - Metrics (from run): final_pop=282, final_groups=10, ungrouped=16, ungrouped_ratio=0.06, avg_tick_ms=47.33, max_deaths=6, worst_zero_birth_streak=10
+  - Notes: All conditions pass except average tick ms (still high at 47.33). Need stronger performance improvements without breaking population threshold.
+- [2025-12-16 07:50Z] Pre-run note: switched World.step neighbor collection to use precomputed offsets/radius cache to lower per-tick overhead; vision cache now refreshed on init/reset.
+- [2025-12-16 08:15Z] Command: pytest -q tests/python/test_long_run_performance.py
+  - Changed files: src/terrarium/world.py (neighbor collection now uses precomputed offsets/radius cache)
+  - Result: PASS
+  - Metrics (from follow-up 5000-tick reproduction run): final_pop=282, final_groups=10, ungrouped=16, ungrouped_ratio=0.06, avg_tick_ms=30.94, max_deaths=6, worst_zero_birth_streak=10
+  - Notes: Average tick time now under limit while keeping other conditions satisfied.
+  - Additional command: python - <<'PY' ... (reproduced 5000-tick metrics post-change)
+- [2025-12-16 08:18Z] Command: pytest -q tests/python
+  - Result: PASS
+  - Notes: Full Python test suite now passing after performance optimizations.
 
 ## Interfaces and Dependencies
 
