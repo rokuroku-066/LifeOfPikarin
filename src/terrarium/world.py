@@ -258,7 +258,6 @@ class World:
                 self._pending_danger.append((agent.position, self._config.environment.danger_pulse_on_flee))
 
         self._apply_births()
-        self._apply_population_cap(sim_time)
         deaths += self._remove_dead()
         self._seed_groups_post_peak()
         active_groups = self._active_group_ids()
@@ -1130,48 +1129,6 @@ class World:
         for agent in self._birth_queue:
             self._agents.append(agent)
         self._birth_queue.clear()
-
-    def _apply_population_cap(self, sim_time: float) -> None:
-        peak_threshold = self._config.feedback.population_peak_threshold
-        peak_cap = self._config.feedback.post_peak_population_cap
-        cap = 0
-        if self._max_population_seen >= peak_threshold and peak_cap > 0:
-            cap = peak_cap
-        else:
-            cap = self._config.feedback.post_warmup_population_cap
-            delay = self._config.feedback.global_population_pressure_delay_seconds
-            if sim_time < delay:
-                return
-        if cap <= 0:
-            return
-        alive_count = sum(1 for agent in self._agents if agent.alive)
-        excess = alive_count - cap
-        if excess <= 0:
-            return
-        removed = 0
-        ungrouped_indices = [i for i, agent in enumerate(self._agents) if agent.alive and agent.group_id == self._UNGROUPED]
-        grouped_indices = [i for i, agent in enumerate(self._agents) if agent.alive and agent.group_id != self._UNGROUPED]
-        for idx in ungrouped_indices:
-            if removed >= excess:
-                break
-            agent = self._agents[idx]
-            if not agent.alive:
-                continue
-            agent.alive = False
-            removed += 1
-            alive_count -= 1
-            self._pending_food.append((agent.position, self._config.environment.food_from_death))
-        if removed < excess:
-            for idx in grouped_indices:
-                if removed >= excess:
-                    break
-                agent = self._agents[idx]
-                if not agent.alive:
-                    continue
-                agent.alive = False
-                removed += 1
-                alive_count -= 1
-                self._pending_food.append((agent.position, self._config.environment.food_from_death))
 
     def _seed_groups_post_peak(self) -> None:
         if self._max_population_seen < self._config.feedback.population_peak_threshold:
