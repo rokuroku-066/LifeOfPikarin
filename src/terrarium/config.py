@@ -11,7 +11,7 @@ import yaml
 class SpeciesConfig:
     base_speed: float = 6.0
     max_acceleration: float = 20.0
-    vision_radius: float = 4.0
+    vision_radius: float = 3.0
     metabolism_per_second: float = 1.0
     birth_energy_cost: float = 3.0
     reproduction_energy_threshold: float = 12.8
@@ -68,14 +68,14 @@ class FeedbackConfig:
     base_death_probability_per_second: float = 0.0012
     age_death_probability_per_second: float = 0.00035
     density_death_probability_per_neighbor_per_second: float = 0.00025
-    global_population_pressure_start: int = 230
-    global_population_pressure_slope: float = 0.2
+    global_population_pressure_start: int = 260
+    global_population_pressure_slope: float = 0.005
     global_population_pressure_delay_seconds: float = 4.0
     population_peak_threshold: int = 400
     post_peak_min_groups: int = 5
     post_peak_max_groups: int = 10
     post_peak_group_seed_size: int = 4
-    max_groups: int = 64
+    max_groups: int = 10
     group_formation_warmup_seconds: float = 0.0
     group_formation_neighbor_threshold: int = 3
     group_formation_chance: float = 0.07
@@ -91,7 +91,7 @@ class FeedbackConfig:
     group_split_chance_max: float = 0.2
     group_split_size_stress_weight: float = 0.001
     group_split_recruitment_count: int = 3
-    group_split_new_group_chance: float = 0.05
+    group_split_new_group_chance: float = 0.02
     group_split_stress_threshold: float = 0.12
     group_merge_cooldown_seconds: float = 1.0
     group_adoption_guard_min_allies: int = 2
@@ -125,8 +125,8 @@ class FeedbackConfig:
 @dataclass
 class SimulationConfig:
     time_step: float = 1.0 / 50.0
-    environment_tick_interval: float = 2.0
-    initial_population: int = 260
+    environment_tick_interval: float = 6.0
+    initial_population: int = 200
     max_population: int = 700
     world_size: float = 100.0
     boundary_margin: float = 10.0
