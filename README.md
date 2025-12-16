@@ -74,7 +74,7 @@
 Python 製のヘッドレスランナーでステップ単位のシミュレーションを回し、CSV にメトリクスを書き出します。
 
 ```bash
-python -m terrarium.headless --steps 3000 --seed 42 --log artifacts/metrics_smoke.csv
+python -m terrarium.headless --steps 5000 --seed 42 --log artifacts/metrics_smoke.csv
 ```
 
 決定論的な CSV（同じ seed で 2 回回したときに完全一致させたい）を取りたい場合は `--deterministic-log` を付けてください。`tick_ms` は 0.000 に固定され、残りの値が同一 seed で一致します。
@@ -95,13 +95,14 @@ python -m terrarium.headless --steps 3000 --seed 42 --log artifacts/metrics_smok
 - 繁殖トリガ: `reproduction_energy_threshold`, `adult_age`, `density_reproduction_slope`, `density_reproduction_penalty`
 - 寿命/密度死亡: `base_death_probability_per_second`, `age_death_probability_per_second`, `density_death_probability_per_neighbor_per_second`
 - 環境フィールド: `food_regen_per_second`, `food_from_death`, `pheromone_diffusion_rate` / `pheromone_decay_rate`, `pheromone_deposit_on_birth`
-- フィールド更新頻度: `environment_tick_interval`（既定 0.12 秒）。食料/フェロモン等の拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
-- 初期/最大個体数: `initial_population`（既定 200）, `max_population`（既定 1000）
+- フィールド更新頻度: `environment_tick_interval`（既定 0.36 秒）。食料/フェロモン等の拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
+- 初期/最大個体数: `initial_population`（既定 260）, `max_population`（既定 400）
 - 境界バイアス: `boundary_margin` 内では `boundary_avoidance_weight` で内側へ押し戻し、`boundary_turn_weight` で進行方向を内向きに寄せ、反射境界と併用して滑らかに折り返します。
-- ランダム歩行の更新周期: `wander_refresh_seconds`（既定 0.12 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
+- ランダム歩行の更新周期: `wander_refresh_seconds`（既定 0.14 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
 - 近距離の押し返し: `personal_space_radius`, `personal_space_weight`, `min_separation_distance`, `min_separation_weight`
 - 孤立時の再コロニー化: 近距離の味方が一定秒数見つからない場合は `group_switch_chance` で近傍多数派へ乗り換え、閾値を満たさなければ `group_detach_new_group_chance` で新グループを立ち上げます（外れた場合は未所属に戻る）。
 - グループ形成・分離: `group_formation_warmup_seconds`, `group_formation_chance`, `group_adoption_chance`, `group_split_chance`, `group_split_size_bonus_per_neighbor`, `group_split_chance_max`, `group_split_recruitment_count`, `group_merge_cooldown_seconds`, `group_adoption_guard_min_allies` など
+- グループ上限: `feedback.max_groups`（既定 10）。上限を超える新規グループ生成を抑止し、長時間回帰テストの範囲内に収めます。
 - グループ内の繁殖抑制: `group_reproduction_penalty_per_ally`（同グループ近傍1人あたりの繁殖率低下量）と `group_reproduction_min_factor`（下限）
 - 拠点（group base）への弱い引力: `group_base_attraction_weight`, `group_base_dead_zone`, `group_base_soft_radius`
 - 群れ間距離/結束: `ally_cohesion_weight`, `ally_separation_weight`, `other_group_separation_weight`, `other_group_avoid_radius`, `other_group_avoid_weight`（同グループは密集、異グループは早めに距離を取る調整用）
@@ -145,7 +146,7 @@ pytest tests/python
 npm run test:js
 ```
 
-- 同一シードでの決定性、SpatialGrid の近傍取得、個体数の上限チェックをカバーしています。
+- 同一シードでの決定性、SpatialGrid の近傍取得、個体数の上限チェック、5000 tick の長時間パフォーマンス回帰（人口ピーク 400～500、グループ 5～10、tick 平均 25ms 以下）をカバーしています。長時間テストは環境によっては 1 分強かかるため、実行前に十分な時間を確保してください。
 - Web ビュー用のユーティリティ（グループ色計算）の決定性を Node 組み込みのテストランナーで検証します（`npm run test:js` が内部で `node --test "tests/js/**/*.js"` を呼ぶので PowerShell / bash どちらでも同一コマンドで動作）。
 
 ---

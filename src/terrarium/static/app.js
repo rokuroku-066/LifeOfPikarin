@@ -66,6 +66,24 @@ const tmpColor = new THREE.Color();
 const tmpDir = new THREE.Vector3();
 const tmpPos = new THREE.Vector3();
 const tmpLook = new THREE.Vector3();
+const overlayColor = new THREE.Color();
+
+let environmentFields = { food: null, pheromones: null };
+let fieldTextureTick = -1;
+let fieldResolution = 1;
+let foodMaxValue = 1;
+let pheromoneMaxValue = 1;
+const fieldMaxSmoothing = 0.25;
+const fieldMaxEmptyDecay = 0.02;
+const minFieldMax = 1e-6;
+let foodCanvas = null;
+let foodCtx = null;
+let foodTexture = null;
+let foodOverlay = null;
+let pheromoneCanvas = null;
+let pheromoneCtx = null;
+let pheromoneTexture = null;
+let pheromoneOverlay = null;
 
 let trackedAgentId = null;
 let lastTrackedYaw = 0;
@@ -188,6 +206,172 @@ function computeViewports() {
   };
 }
 
+function createFieldTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d');
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.needsUpdate = true;
+  return { canvas, ctx, texture };
+}
+
+function setupFieldOverlays() {
+  ({ canvas: foodCanvas, ctx: foodCtx, texture: foodTexture } = createFieldTexture());
+  ({ canvas: pheromoneCanvas, ctx: pheromoneCtx, texture: pheromoneTexture } = createFieldTexture());
+
+  const foodGeo = new THREE.PlaneGeometry(worldSize, worldSize);
+  const foodMat = new THREE.MeshBasicMaterial({
+    map: foodTexture,
+    transparent: true,
+    opacity: 0.65,
+    depthWrite: false,
+  });
+  foodOverlay = new THREE.Mesh(foodGeo, foodMat);
+  foodOverlay.rotateX(-Math.PI / 2);
+  foodOverlay.position.y = 0.02;
+  foodOverlay.renderOrder = 1;
+  scene.add(foodOverlay);
+
+  const pherGeo = new THREE.PlaneGeometry(worldSize, worldSize);
+  const pherMat = new THREE.MeshBasicMaterial({
+    map: pheromoneTexture,
+    transparent: true,
+    opacity: 0.35,
+    blending: THREE.NormalBlending,
+    depthWrite: false,
+  });
+  pheromoneOverlay = new THREE.Mesh(pherGeo, pherMat);
+  pheromoneOverlay.rotateX(-Math.PI / 2);
+  pheromoneOverlay.position.y = 0.03;
+  pheromoneOverlay.renderOrder = 2;
+  scene.add(pheromoneOverlay);
+}
+
+function ensureFieldTextures(resolution) {
+  const size = Math.max(1, Math.floor(resolution || 1));
+  if (foodCanvas && (foodCanvas.width !== size || foodCanvas.height !== size)) {
+    foodCanvas.width = size;
+    foodCanvas.height = size;
+    foodTexture.needsUpdate = true;
+  }
+  if (pheromoneCanvas && (pheromoneCanvas.width !== size || pheromoneCanvas.height !== size)) {
+    pheromoneCanvas.width = size;
+    pheromoneCanvas.height = size;
+    pheromoneTexture.needsUpdate = true;
+  }
+  fieldResolution = size;
+}
+
+function clearFieldTexture(ctx, texture) {
+  if (!ctx || !texture) return;
+  ctx.clearRect(0, 0, fieldResolution, fieldResolution);
+  texture.needsUpdate = true;
+}
+
+function drawFoodOverlay(field) {
+  if (!foodCtx || !foodTexture) return;
+  foodCtx.clearRect(0, 0, fieldResolution, fieldResolution);
+  const cells = field?.cells ?? [];
+  if (!cells.length) {
+    foodMaxValue = Math.max(minFieldMax, THREE.MathUtils.lerp(foodMaxValue, minFieldMax, fieldMaxEmptyDecay));
+    foodTexture.needsUpdate = true;
+    return;
+  }
+  let maxValue = 0;
+  for (const cell of cells) {
+    if (Number.isFinite(cell.value)) {
+      maxValue = Math.max(maxValue, cell.value);
+    }
+  }
+  if (maxValue <= 0) {
+    foodMaxValue = Math.max(minFieldMax, THREE.MathUtils.lerp(foodMaxValue, minFieldMax, fieldMaxEmptyDecay));
+    foodTexture.needsUpdate = true;
+    return;
+  }
+  foodMaxValue = Math.max(minFieldMax, THREE.MathUtils.lerp(foodMaxValue, maxValue, fieldMaxSmoothing));
+  for (const cell of cells) {
+    const intensity = THREE.MathUtils.clamp((cell.value ?? 0) / foodMaxValue, 0, 1);
+    const mapped = Math.sqrt(intensity);
+    const alpha = mapped * 0.8;
+    foodCtx.fillStyle = `rgba(120, 220, 140, ${alpha})`;
+    const px = Math.min(fieldResolution - 1, Math.max(0, Math.floor(cell.x ?? 0)));
+    const py = Math.min(fieldResolution - 1, Math.max(0, Math.floor(cell.y ?? 0)));
+    foodCtx.fillRect(px, fieldResolution - 1 - py, 1, 1);
+  }
+  foodTexture.needsUpdate = true;
+}
+
+function drawPheromoneOverlay(field) {
+  if (!pheromoneCtx || !pheromoneTexture) return;
+  pheromoneCtx.clearRect(0, 0, fieldResolution, fieldResolution);
+  const cells = field?.cells ?? [];
+  if (!cells.length) {
+    pheromoneMaxValue = Math.max(
+      minFieldMax,
+      THREE.MathUtils.lerp(pheromoneMaxValue, minFieldMax, fieldMaxEmptyDecay),
+    );
+    pheromoneTexture.needsUpdate = true;
+    return;
+  }
+  let maxValue = 0;
+  for (const cell of cells) {
+    if (Number.isFinite(cell.value)) {
+      maxValue = Math.max(maxValue, cell.value);
+    }
+  }
+  if (maxValue <= 0) {
+    pheromoneMaxValue = Math.max(
+      minFieldMax,
+      THREE.MathUtils.lerp(pheromoneMaxValue, minFieldMax, fieldMaxEmptyDecay),
+    );
+    pheromoneTexture.needsUpdate = true;
+    return;
+  }
+  pheromoneMaxValue = Math.max(
+    minFieldMax,
+    THREE.MathUtils.lerp(pheromoneMaxValue, maxValue, fieldMaxSmoothing),
+  );
+  for (const cell of cells) {
+    const intensity = THREE.MathUtils.clamp((cell.value ?? 0) / pheromoneMaxValue, 0, 1);
+    const mapped = Math.pow(intensity, 0.6);
+    const alpha = mapped * 0.6;
+    const hue = computeGroupHue(cell.group ?? 0);
+    overlayColor.setHSL(hue / 360, colorSaturation, 0.5);
+    const r = Math.round(overlayColor.r * 255);
+    const g = Math.round(overlayColor.g * 255);
+    const b = Math.round(overlayColor.b * 255);
+    pheromoneCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    const px = Math.min(fieldResolution - 1, Math.max(0, Math.floor(cell.x ?? 0)));
+    const py = Math.min(fieldResolution - 1, Math.max(0, Math.floor(cell.y ?? 0)));
+    pheromoneCtx.fillRect(px, fieldResolution - 1 - py, 1, 1);
+  }
+  pheromoneTexture.needsUpdate = true;
+}
+
+function updateEnvironmentFields(snapshot) {
+  if (!snapshot || !snapshot.fields) {
+    clearFieldTexture(foodCtx, foodTexture);
+    clearFieldTexture(pheromoneCtx, pheromoneTexture);
+    fieldTextureTick = -1;
+    return;
+  }
+  if (fieldTextureTick === snapshot.tick) return;
+  const { food, pheromones } = snapshot.fields;
+  const resolution = Math.max(
+    1,
+    Math.floor(food?.resolution || pheromones?.resolution || fieldResolution || 1),
+  );
+  ensureFieldTextures(resolution);
+  drawFoodOverlay(food);
+  drawPheromoneOverlay(pheromones);
+  fieldTextureTick = snapshot.tick;
+}
+
 
 function initThree() {
   scene = new THREE.Scene();
@@ -238,6 +422,8 @@ function initThree() {
   ground.rotateX(-Math.PI / 2);
   ground.receiveShadow = true;
   scene.add(ground);
+
+  setupFieldOverlays();
 
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
   scene.add(ambientLight);
@@ -349,6 +535,8 @@ function connect() {
   socket.onopen = () => setConnectionStatus('ok', 'connected');
   socket.onmessage = (event) => {
     const parsed = JSON.parse(event.data);
+    environmentFields = parsed.fields ?? environmentFields;
+    parsed.fields = parsed.fields ?? environmentFields;
     parsed.agentsById = new Map(parsed.agents.map((agent) => [agent.id, agent]));
     prevSnapshot = nextSnapshot;
     prevSnapshotTime = nextSnapshotTime;
@@ -457,6 +645,8 @@ function updateTrackedUi(agent) {
 function updateView(now) {
   if (!scene || !renderer) return;
   ensureLayout();
+
+  updateEnvironmentFields(nextSnapshot);
 
   if (!nextSnapshot) {
     renderViews(null);

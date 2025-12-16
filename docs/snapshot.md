@@ -21,6 +21,7 @@ Fields currently emitted from `terrarium.world.TickMetrics`:
 
 - `tick`: tick index the metrics were computed for.
 - `population`: living agent count.
+- `ungrouped`: living agents currently not affiliated with any group.
 - `births`, `deaths`: births/deaths during the tick.
 - `average_energy`, `average_age`: per-tick averages across living agents.
 - `groups`: number of active groups (ungrouped agents are excluded).

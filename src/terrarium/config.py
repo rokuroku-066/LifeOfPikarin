@@ -118,7 +118,9 @@ class FeedbackConfig:
     group_base_soft_radius: float = 7.0
     group_base_dead_zone: float = 1.2
     min_separation_distance: float = 0.7
-    min_separation_weight: float = 2.5
+    min_separation_weight: float = 2.1
+    group_seek_radius: float = 10.0
+    group_seek_weight: float = 1.8
 
 
 @dataclass
@@ -131,7 +133,7 @@ class SimulationConfig:
     boundary_margin: float = 10.0
     boundary_avoidance_weight: float = 1.6
     boundary_turn_weight: float = 0.85
-    cell_size: float = 6.0
+    cell_size: float = 5.5
     seed: int = 42
     config_version: str = "v1"
     species: SpeciesConfig = field(default_factory=SpeciesConfig)
