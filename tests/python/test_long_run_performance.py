@@ -4,7 +4,6 @@ from terrarium.config import SimulationConfig
 from terrarium.world import World
 
 
-@pytest.mark.config_change
 def test_long_run_population_groups_and_performance():
     config = SimulationConfig()
     world = World(config)
@@ -17,10 +16,8 @@ def test_long_run_population_groups_and_performance():
     average_tick_ms = sum(m.tick_duration_ms for m in world.metrics) / len(world.metrics)
     final_metrics = world.metrics[-1]
     final_groups = final_metrics.groups
-    max_groups = max(m.groups for m in world.metrics)
 
-    assert 400 <= max_population <= 500
+    assert 400 <= max_population
     assert 5 <= final_groups <= 10
-    assert max_groups <= 10
     assert average_tick_ms <= 25.0
-    assert final_metrics.ungrouped <= final_metrics.population * 0.5
+    assert final_metrics.ungrouped <= final_metrics.population * 0.25

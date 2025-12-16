@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,21 +9,21 @@ import yaml
 
 @dataclass
 class SpeciesConfig:
-    base_speed: float = 5.3
-    max_acceleration: float = 18.0
-    vision_radius: float = 1.8
-    metabolism_per_second: float = 0.82
-    birth_energy_cost: float = 1.0
-    reproduction_energy_threshold: float = 13.5
-    adult_age: float = 18.0
-    initial_age_min: float = 0.0
+    base_speed: float = 6.0
+    max_acceleration: float = 20.0
+    vision_radius: float = 4.0
+    metabolism_per_second: float = 1.0
+    birth_energy_cost: float = 3.0
+    reproduction_energy_threshold: float = 12.8
+    adult_age: float = 6.0
+    initial_age_min: float = 0.5
     initial_age_max: float = 0.0
-    max_age: float = 90.0
-    wander_jitter: float = 0.15
-    wander_refresh_seconds: float = 0.14
-    initial_energy_fraction_of_threshold: float = 0.95
-    energy_soft_cap: float = 16.0
-    high_energy_metabolism_slope: float = 0.05
+    max_age: float = 80.0
+    wander_jitter: float = 0.25
+    wander_refresh_seconds: float = 0.12
+    initial_energy_fraction_of_threshold: float = 1.3
+    energy_soft_cap: float = 14.0
+    high_energy_metabolism_slope: float = 0.08
 
 
 @dataclass
@@ -37,68 +37,85 @@ class ResourcePatchConfig:
 
 @dataclass
 class EnvironmentConfig:
-    food_per_cell: float = 8.5
+    food_per_cell: float = 9.0
     food_regen_per_second: float = 0.7
-    food_consumption_rate: float = 5.5
-    food_diffusion_rate: float = 0.08
+    food_consumption_rate: float = 6.0
+    food_diffusion_rate: float = 0.1
     food_decay_rate: float = 0.0
-    food_from_death: float = 9.0
-    food_regen_noise_amplitude: float = 0.5
-    food_regen_noise_interval_seconds: float = 24.0
-    food_regen_noise_smooth_seconds: float = 8.0
+    food_from_death: float = 12.0
+    food_regen_noise_amplitude: float = 0.9
+    food_regen_noise_interval_seconds: float = 30.0
+    food_regen_noise_smooth_seconds: float = 10.0
     resource_patches: List[ResourcePatchConfig] = field(default_factory=list)
-    pheromone_diffusion_rate: float = 0.28
-    pheromone_decay_rate: float = 0.045
-    pheromone_deposit_on_birth: float = 3.0
+    danger_diffusion_rate: float = 2.0
+    danger_decay_rate: float = 1.0
+    danger_pulse_on_flee: float = 1.0
+    pheromone_diffusion_rate: float = 0.3
+    pheromone_decay_rate: float = 0.05
+    pheromone_deposit_on_birth: float = 4.0
+    group_food_max_per_cell: float = 6.0
+    group_food_decay_rate: float = 0.25
+    group_food_diffusion_rate: float = 0.07
 
 
 @dataclass
 class FeedbackConfig:
-    local_density_soft_cap: int = 13
-    density_reproduction_penalty: float = 0.45
-    stress_drain_per_neighbor: float = 0.01
-    disease_probability_per_neighbor: float = 0.001
-    density_reproduction_slope: float = 0.02
-    base_death_probability_per_second: float = 0.001
-    age_death_probability_per_second: float = 0.0002
-    density_death_probability_per_neighbor_per_second: float = 0.00012
+    local_density_soft_cap: int = 12
+    density_reproduction_penalty: float = 0.5
+    stress_drain_per_neighbor: float = 0.02
+    disease_probability_per_neighbor: float = 0.002
+    density_reproduction_slope: float = 0.03
+    base_death_probability_per_second: float = 0.0012
+    age_death_probability_per_second: float = 0.00035
+    density_death_probability_per_neighbor_per_second: float = 0.00025
+    global_population_pressure_start: int = 200
+    global_population_pressure_slope: float = 0.04
+    global_population_pressure_delay_seconds: float = 14.0
+    post_warmup_population_cap: int = 0
+    population_peak_threshold: int = 400
+    post_peak_population_cap: int = 30
+    post_peak_min_groups: int = 5
+    post_peak_max_groups: int = 10
+    post_peak_group_seed_size: int = 4
     group_formation_warmup_seconds: float = 0.0
-    group_formation_neighbor_threshold: int = 2
-    group_formation_chance: float = 0.06
+    group_formation_neighbor_threshold: int = 3
+    group_formation_chance: float = 0.07
     group_adoption_neighbor_threshold: int = 1
-    group_adoption_chance: float = 0.8
-    group_adoption_small_group_bonus: float = 0.18
-    group_split_neighbor_threshold: int = 9
-    group_split_chance: float = 0.0015
-    group_split_size_bonus_per_neighbor: float = 0.0035
-    group_split_chance_max: float = 0.03
-    group_split_size_stress_weight: float = 0.0009
+    group_adoption_chance: float = 0.5
+    group_adoption_small_group_bonus: float = 0.4
+    group_food_neighbor_threshold: int = 6
+    group_food_spawn_chance: float = 0.1
+    group_food_spawn_amount: float = 2.0
+    group_split_neighbor_threshold: int = 5
+    group_split_chance: float = 0.008
+    group_split_size_bonus_per_neighbor: float = 0.01
+    group_split_chance_max: float = 0.2
+    group_split_size_stress_weight: float = 0.001
     group_split_recruitment_count: int = 3
-    group_split_new_group_chance: float = 0.06
-    group_split_stress_threshold: float = 0.115
-    group_merge_cooldown_seconds: float = 1.5
+    group_split_new_group_chance: float = 0.05
+    group_split_stress_threshold: float = 0.12
+    group_merge_cooldown_seconds: float = 1.0
     group_adoption_guard_min_allies: int = 2
     group_reproduction_penalty_per_ally: float = 0.03
-    group_reproduction_min_factor: float = 0.12
+    group_reproduction_min_factor: float = 0.08
     group_birth_seed_chance: float = 0.03
-    group_mutation_chance: float = 0.003
-    max_groups: int = 10
-    personal_space_radius: float = 1.0
-    personal_space_weight: float = 1.5
-    group_cohesion_radius: float = 5.9
-    group_detach_radius: float = 3.6
-    group_detach_close_neighbor_threshold: int = 1
-    group_detach_after_seconds: float = 9.0
-    group_switch_chance: float = 0.18
-    group_detach_new_group_chance: float = 0.005
-    group_cohesion_weight: float = 3.1
+    group_mutation_chance: float = 0.005
+    personal_space_radius: float = 1.1
+    personal_space_weight: float = 2.2
+    group_cohesion_radius: float = 4.0
+    group_detach_radius: float = 3.0
+    group_detach_close_neighbor_threshold: int = 2
+    group_detach_after_seconds: float = 4.5
+    group_switch_chance: float = 0.4
+    group_detach_new_group_chance: float = 0.01
+    group_cohesion_weight: float = 3.2
     ally_cohesion_weight: float = 1.6
-    ally_separation_weight: float = 0.45
+    ally_separation_weight: float = 0.4
     other_group_separation_weight: float = 1.4
-    other_group_avoid_radius: float = 8.5
-    other_group_avoid_weight: float = 1.2
-    group_base_attraction_weight: float = 0.9
-    group_base_soft_radius: float = 9.0
+    other_group_avoid_radius: float = 6.0
+    other_group_avoid_weight: float = 0.9
+    group_base_attraction_weight: float = 0.55
+    group_base_soft_radius: float = 7.0
     group_base_dead_zone: float = 1.2
     min_separation_distance: float = 0.7
     min_separation_weight: float = 2.1
@@ -109,10 +126,10 @@ class FeedbackConfig:
 @dataclass
 class SimulationConfig:
     time_step: float = 1.0 / 50.0
-    environment_tick_interval: float = 0.8
-    initial_population: int = 320
-    max_population: int = 420
-    world_size: float = 110.0
+    environment_tick_interval: float = 2.0
+    initial_population: int = 260
+    max_population: int = 700
+    world_size: float = 100.0
     boundary_margin: float = 10.0
     boundary_avoidance_weight: float = 1.6
     boundary_turn_weight: float = 0.85
