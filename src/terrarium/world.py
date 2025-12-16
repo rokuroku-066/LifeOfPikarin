@@ -258,13 +258,8 @@ class World:
                 self._pending_danger.append((agent.position, self._config.environment.danger_pulse_on_flee))
 
         self._apply_births()
-        natural_deaths = self._remove_dead()
-        pruned = self._prune_population_post_peak(natural_deaths)
-        pruned_removed = self._remove_dead() if pruned else 0
-        deaths = natural_deaths + pruned_removed
+        deaths += self._remove_dead()
         self._seed_groups_post_peak()
-        active_groups = self._active_group_ids()
-        self._merge_excess_groups(active_groups)
         active_groups = self._active_group_ids()
         self._prune_group_bases(active_groups)
         self._apply_field_events()
@@ -1040,17 +1035,7 @@ class World:
                     self._config.feedback.group_reproduction_min_factor,
                     1.0 - penalty,
                 )
-            population_factor = 1.0
-            birth_pressure_slope = getattr(self._config.feedback, "birth_pressure_slope", 0.0)
-            if birth_pressure_slope > 0.0 and population > self._config.feedback.global_population_pressure_start:
-                over = population - self._config.feedback.global_population_pressure_start
-                population_factor = max(
-                    self._config.feedback.group_reproduction_min_factor,
-                    1.0 - over * birth_pressure_slope,
-                )
-            reproduction_chance = max(
-                0.0, min(1.0, 0.25 * density_factor * group_factor * population_factor)
-            )
+            reproduction_chance = max(0.0, min(1.0, 0.25 * density_factor * group_factor))
             if self._rng.next_float() < reproduction_chance:
                 child_energy = agent.energy * 0.5
                 agent.energy -= child_energy + self._config.species.birth_energy_cost
@@ -1189,53 +1174,6 @@ class World:
             gid = target_groups[assign_index % len(target_groups)]
             self._set_group(agent, gid)
             assign_index += 1
-
-    def _prune_population_post_peak(self, current_deaths: int) -> int:
-        if self._max_population_seen < self._config.feedback.population_peak_threshold:
-            return 0
-        target_population = max(0, int(self._config.feedback.post_peak_target_population))
-        jitter = int(self._rng.next_range(-5, 6))
-        effective_target = max(0, target_population + jitter)
-        prune_limit = max(0, int(self._config.feedback.post_peak_prune_per_tick))
-        population = len(self._agents)
-        buffer = 4
-        if population <= effective_target + buffer or prune_limit <= 0:
-            return 0
-        allowed = min(prune_limit, max(0, 8 - current_deaths))
-        if allowed <= 0:
-            return 0
-        candidates = sorted(
-            (agent for agent in self._agents if agent.alive),
-            key=lambda agent: (agent.group_id != self._UNGROUPED, agent.energy, -agent.age),
-        )
-        removals = min(allowed, population - effective_target - buffer, len(candidates))
-        removed = 0
-        for agent in candidates[:removals]:
-            agent.alive = False
-            self._pending_food.append((agent.position, self._config.environment.food_from_death))
-            removed += 1
-        return removed
-
-    def _merge_excess_groups(self, active_groups: Set[int]) -> None:
-        max_groups = self._config.feedback.post_peak_max_groups
-        if max_groups <= 0 or len(active_groups) <= max_groups:
-            return
-        if not self._group_sizes or len(self._group_sizes) < len(active_groups):
-            self._group_sizes.clear()
-            for agent in self._agents:
-                if agent.alive and agent.group_id != self._UNGROUPED:
-                    self._group_sizes[agent.group_id] = self._group_sizes.get(agent.group_id, 0) + 1
-        sorted_groups = sorted(active_groups, key=lambda gid: self._group_sizes.get(gid, 0))
-        keep_groups = set(sorted_groups[-max_groups:])
-        if not keep_groups:
-            return
-        destination = max(keep_groups, key=lambda gid: self._group_sizes.get(gid, 0))
-        for agent in self._agents:
-            if agent.alive and agent.group_id not in keep_groups:
-                self._set_group(agent, destination)
-        for gid in list(self._group_bases.keys()):
-            if gid not in keep_groups:
-                self._group_bases.pop(gid, None)
 
     def _refresh_index_map(self) -> None:
         self._id_to_index = {agent.id: i for i, agent in enumerate(self._agents)}
