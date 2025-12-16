@@ -47,7 +47,6 @@ def _heading_from_velocity(vector: Vector2) -> float:
 class TickMetrics:
     tick: int
     population: int
-    ungrouped: int
     births: int
     deaths: int
     average_energy: float
@@ -611,6 +610,10 @@ class World:
         desired = ZERO
         flee_vector = ZERO
         sensed_danger = False
+        species = self._config.species
+        feedback = self._config.feedback
+        environment = self._config.environment
+        base_speed = species.base_speed
 
         danger_level = self._environment.sample_danger(agent.position)
         if danger_level > 0.1:
@@ -1289,7 +1292,6 @@ class World:
         return TickMetrics(
             tick=tick,
             population=population,
-            ungrouped=ungrouped,
             births=births,
             deaths=deaths,
             average_energy=avg_energy,
@@ -1305,7 +1307,6 @@ class World:
         return TickMetrics(
             tick=tick,
             population=population,
-            ungrouped=ungrouped,
             births=0,
             deaths=0,
             average_energy=avg_energy,

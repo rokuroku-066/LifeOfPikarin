@@ -77,6 +77,7 @@ class FeedbackConfig:
     post_peak_min_groups: int = 5
     post_peak_max_groups: int = 10
     post_peak_group_seed_size: int = 4
+    max_groups: int = 64
     group_formation_warmup_seconds: float = 0.0
     group_formation_neighbor_threshold: int = 3
     group_formation_chance: float = 0.07
