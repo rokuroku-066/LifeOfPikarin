@@ -232,6 +232,7 @@ class World:
             accel = _clamp_length(accel, species.max_acceleration)
             agent.velocity = _clamp_length(agent.velocity + accel * dt, base_speed)
             new_position = agent.position + agent.velocity * dt
+            new_position = self._resolve_overlap(new_position, self._neighbor_offsets)
             agent.position, agent.velocity = self._reflect(new_position, agent.velocity, config.world_size)
             self._update_heading(agent)
             agent.age += dt
@@ -678,11 +679,14 @@ class World:
         if not neighbor_vectors:
             return ZERO
         accum = ZERO
+        closest_dist_sq = float("inf")
         min_sep = max(0.0, float(self._config.feedback.min_separation_distance))
         min_sep_sq = min_sep * min_sep
         min_sep_weight = max(0.0, float(self._config.feedback.min_separation_weight))
         for other, offset in zip(neighbors, neighbor_vectors):
             raw_dist_sq = offset.length_squared()
+            if raw_dist_sq < closest_dist_sq:
+                closest_dist_sq = raw_dist_sq
             dist_sq = max(raw_dist_sq, 0.1)
             same_group = agent.group_id != self._UNGROUPED and other.group_id == agent.group_id
             weight = (
@@ -695,7 +699,37 @@ class World:
                 strength = (min_sep_sq - raw_dist_sq) / min_sep_sq
                 strength = max(0.0, min(1.0, strength))
                 accum = accum - _safe_normalize(offset) * (strength * strength) * min_sep_weight
-        return _safe_normalize(accum)
+        if accum.length_squared() < 1e-12:
+            return ZERO
+        if closest_dist_sq < float("inf") and closest_dist_sq > 1e-12 and min_sep > 1e-6:
+            closest = math.sqrt(closest_dist_sq)
+            if closest < min_sep:
+                scale = min(4.0, max(1.0, min_sep / max(closest, 1e-4)))
+                accum = accum * scale
+        return _clamp_length(accum, 3.5)
+
+    def _resolve_overlap(self, position: Vector2, neighbor_offsets: List[Vector2]) -> Vector2:
+        min_sep = max(0.0, float(self._config.feedback.min_separation_distance))
+        if min_sep <= 1e-6 or not neighbor_offsets:
+            return position
+        min_sep_sq = min_sep * min_sep
+        correction = ZERO
+        count = 0
+        for offset in neighbor_offsets:
+            dist_sq = offset.length_squared()
+            if dist_sq <= 1e-12 or dist_sq >= min_sep_sq:
+                continue
+            dist = math.sqrt(dist_sq)
+            overlap = min_sep - dist
+            if overlap <= 0.0:
+                continue
+            correction = correction - _safe_normalize(offset) * overlap
+            count += 1
+        if count == 0:
+            return position
+        correction = correction / count
+        correction = _clamp_length(correction, min_sep * 0.5)
+        return position + correction
 
     def _alignment(self, agent: Agent, neighbors: List[Agent]) -> Vector2:
         if agent.group_id == self._UNGROUPED:
@@ -1036,11 +1070,12 @@ class World:
                     if child_group != self._UNGROUPED and self._config.feedback.group_merge_cooldown_seconds > 0.0
                     else 0.0
                 )
+                spawn_distance = max(0.5, float(self._config.feedback.min_separation_distance))
                 child = Agent(
                     id=self._next_id,
                     generation=agent.generation + 1,
                     group_id=child_group,
-                    position=agent.position + self._rng.next_unit_circle() * 0.5,
+                    position=agent.position + self._rng.next_unit_circle() * spawn_distance,
                     velocity=agent.velocity,
                     heading=agent.heading,
                     energy=child_energy,
