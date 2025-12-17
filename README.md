@@ -1,4 +1,5 @@
-﻿# Life Of Pikarin
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/rokuroku-066/LifeOfPikarin)
+ # Life Of Pikarin
 
 俯瞰固定カメラでキューブたちが決定的に動き回る箱庭ライフゲーム風シミュレーションです。Phase 1 は **キューブ表示のみ** を対象とし、後から FBX モデル・アニメーションに差し替え可能な構造になっています。
 
