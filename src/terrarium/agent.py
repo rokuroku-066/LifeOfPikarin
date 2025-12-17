@@ -15,6 +15,14 @@ class AgentState(str, Enum):
 
 
 @dataclass
+class AgentTraits:
+    speed: float = 1.0
+    metabolism: float = 1.0
+    disease_resistance: float = 1.0
+    fertility: float = 1.0
+
+
+@dataclass
 class Agent:
     id: int
     generation: int
@@ -24,6 +32,8 @@ class Agent:
     energy: float
     age: float
     state: AgentState
+    lineage_id: int = 0
+    traits: AgentTraits = field(default_factory=AgentTraits)
     alive: bool = True
     stress: float = 0.0
     group_lonely_seconds: float = 0.0
