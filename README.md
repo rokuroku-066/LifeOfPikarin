@@ -107,6 +107,7 @@ python -m terrarium.headless --steps 5000 --seed 42 --log artifacts/metrics_smok
 - グループ内の繁殖抑制: `group_reproduction_penalty_per_ally`（同グループ近傍1人あたりの繁殖率低下量）と `group_reproduction_min_factor`（下限）
 - 拠点（group base）への弱い引力: `group_base_attraction_weight`, `group_base_dead_zone`, `group_base_soft_radius`
 - 群れ間距離/結束: `ally_cohesion_weight`, `ally_separation_weight`, `other_group_separation_weight`, `other_group_avoid_radius`, `other_group_avoid_weight`（同グループは密集、異グループは早めに距離を取る調整用）
+- 進化設定: `evolution.enabled`（既定 False）で遺伝的形質伝搬を有効化。`mutation_strength` と `lineage_mutation_chance`、各トレイトの `clamp` 範囲、重み（`*_mutation_weight`）で変異幅を調整し、無効時は既存 RNG 消費と挙動を変えません。
 
 ---
 

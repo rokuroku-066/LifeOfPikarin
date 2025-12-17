@@ -43,8 +43,10 @@ Fields currently emitted for each living agent:
 - `speed`: magnitude of the velocity vector (world units per second).
 - `is_alive`: explicit liveness flag (currently always `true` because `agents` enumerates living agents only).
 - `phase`: coarse animation phase (currently always `loop`; kept for Phase 2 compatibility).
-- `species_id`: current species index (single-species sim emits `0`).
-- `appearance_seed`: stable seed to derive appearance (currently defaults to the agent id).
+- `lineage_id`: deterministic genetic lineage identifier, independent of social group membership.
+- `generation`: birth generation counter (0 for bootstrap cohort).
+- `trait_speed`: representative inherited trait influencing movement cap and color accenting.
+- `appearance_seed`: stable seed to derive appearance (defaults to the agent id).
 - `importance`: placeholder LOD weight for future load shedding (currently `1.0`).
 
 ## Units and consistency

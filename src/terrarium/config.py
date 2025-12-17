@@ -123,6 +123,26 @@ class FeedbackConfig:
 
 
 @dataclass
+class EvolutionClampConfig:
+    speed: tuple[float, float] = (0.8, 1.25)
+    metabolism: tuple[float, float] = (0.8, 1.25)
+    disease_resistance: tuple[float, float] = (0.6, 1.4)
+    fertility: tuple[float, float] = (0.7, 1.3)
+
+
+@dataclass
+class EvolutionConfig:
+    enabled: bool = False
+    mutation_strength: float = 0.05
+    lineage_mutation_chance: float = 0.01
+    speed_mutation_weight: float = 1.0
+    metabolism_mutation_weight: float = 0.5
+    disease_resistance_mutation_weight: float = 0.5
+    fertility_mutation_weight: float = 0.5
+    clamp: EvolutionClampConfig = field(default_factory=EvolutionClampConfig)
+
+
+@dataclass
 class SimulationConfig:
     time_step: float = 1.0 / 50.0
     environment_tick_interval: float = 6.0
@@ -138,6 +158,7 @@ class SimulationConfig:
     species: SpeciesConfig = field(default_factory=SpeciesConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+    evolution: EvolutionConfig = field(default_factory=EvolutionConfig)
 
     @staticmethod
     def from_yaml(path: Path) -> "SimulationConfig":
@@ -152,6 +173,14 @@ class AppConfig:
 
 
 def load_config(raw: dict) -> SimulationConfig:
+    default_clamp = EvolutionClampConfig()
+    clamp_raw = raw.get("evolution", {}).get("clamp", {})
+
+    def _pair(value: tuple[float, float] | list[float] | None, default: tuple[float, float]) -> tuple[float, float]:
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            return (float(value[0]), float(value[1]))
+        return default
+
     species = SpeciesConfig(**raw.get("species", {}))
     patches = [ResourcePatchConfig(**patch) for patch in raw.get("resource_patches", raw.get("ResourcePatches", []))]
     env_raw = raw.get("environment", {})
@@ -160,5 +189,16 @@ def load_config(raw: dict) -> SimulationConfig:
         **{k: v for k, v in env_raw.items() if k != "resource_patches"},
     )
     feedback = FeedbackConfig(**raw.get("feedback", {}))
-    sim_values = {k: v for k, v in raw.items() if k not in {"species", "environment", "feedback", "resource_patches"}}
-    return SimulationConfig(species=species, environment=env, feedback=feedback, **sim_values)
+    evolution_raw = raw.get("evolution", {})
+    clamp = EvolutionClampConfig(
+        speed=_pair(clamp_raw.get("speed"), default_clamp.speed),
+        metabolism=_pair(clamp_raw.get("metabolism"), default_clamp.metabolism),
+        disease_resistance=_pair(clamp_raw.get("disease_resistance"), default_clamp.disease_resistance),
+        fertility=_pair(clamp_raw.get("fertility"), default_clamp.fertility),
+    )
+    evolution_values = {k: v for k, v in evolution_raw.items() if k != "clamp"}
+    evolution = EvolutionConfig(clamp=clamp, **evolution_values)
+    sim_values = {
+        k: v for k, v in raw.items() if k not in {"species", "environment", "feedback", "resource_patches", "evolution"}
+    }
+    return SimulationConfig(species=species, environment=env, feedback=feedback, evolution=evolution, **sim_values)

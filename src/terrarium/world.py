@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from pygame.math import Vector2
 
-from .agent import Agent, AgentState
+from .agent import Agent, AgentState, AgentTraits
 from .config import SimulationConfig
 from .environment import EnvironmentGrid
 from .rng import DeterministicRng
@@ -41,6 +41,10 @@ def _heading_from_velocity(vector: Vector2) -> float:
     if vector.length_squared() < 1e-12:
         return 0.0
     return math.atan2(vector.y, vector.x)
+
+
+def _clamp_value(value: float, min_value: float, max_value: float) -> float:
+    return max(min_value, min(max_value, value))
 
 
 @dataclass
@@ -110,6 +114,7 @@ class World:
         self._group_counts_scratch: Dict[int, int] = {}
         self._group_sizes: Dict[int, int] = {}
         self._group_bases: Dict[int, Vector2] = {}
+        self._next_lineage_id = 0
         self._next_id = 0
         self._next_group_id = 0
         self._max_population_seen = 0
@@ -145,6 +150,7 @@ class World:
         self._group_bases.clear()
         self._rng.reset()
         self._climate_rng.reset()
+        self._next_lineage_id = 0
         self._id_to_index.clear()
         self._metrics.clear()
         self._next_id = 0
@@ -165,7 +171,6 @@ class World:
         species = config.species
         feedback = config.feedback
         dt = config.time_step
-        base_speed = species.base_speed
         self._pending_food.clear()
         self._pending_danger.clear()
         self._pending_pheromone.clear()
@@ -200,6 +205,8 @@ class World:
             same_group_neighbors = 0
             close_allies = 0
             original_group = agent.group_id
+            self._clamp_traits(agent.traits)
+            speed_limit = self._trait_speed_limit(agent.traits)
 
             self._grid.collect_neighbors_precomputed(
                 agent.position,
@@ -226,11 +233,11 @@ class World:
                             close_allies += 1
 
             desired, sensed_danger = self._compute_desired_velocity(
-                agent, self._neighbor_agents, self._neighbor_offsets, return_sensed=True
+                agent, self._neighbor_agents, self._neighbor_offsets, speed_limit, return_sensed=True
             )
             accel = desired - agent.velocity
             accel = _clamp_length(accel, species.max_acceleration)
-            agent.velocity = _clamp_length(agent.velocity + accel * dt, base_speed)
+            agent.velocity = _clamp_length(agent.velocity + accel * dt, speed_limit)
             new_position = agent.position + agent.velocity * dt
             new_position = self._resolve_overlap(new_position, self._neighbor_offsets)
             agent.position, agent.velocity = self._reflect(new_position, agent.velocity, config.world_size)
@@ -288,11 +295,14 @@ class World:
 
     def _bootstrap_population(self) -> None:
         for _ in range(self._config.initial_population):
+            traits = self._clamp_traits(AgentTraits())
+            lineage = self._allocate_lineage_id()
+            speed_limit = self._trait_speed_limit(traits)
             pos = Vector2(
                 self._rng.next_range(0.0, self._config.world_size),
                 self._rng.next_range(0.0, self._config.world_size),
             )
-            velocity = self._rng.next_unit_circle() * (self._config.species.base_speed * 0.3)
+            velocity = self._rng.next_unit_circle() * (speed_limit * 0.3)
             agent = Agent(
                 id=self._next_id,
                 generation=0,
@@ -303,6 +313,8 @@ class World:
                 energy=self._config.species.reproduction_energy_threshold * self._config.species.initial_energy_fraction_of_threshold,
                 age=self._sample_initial_age(),
                 state=AgentState.WANDER,
+                lineage_id=lineage,
+                traits=traits,
                 wander_dir=self._rng.next_unit_circle(),
                 wander_time=self._config.species.wander_refresh_seconds,
             )
@@ -323,6 +335,11 @@ class World:
             min_age, max_age = max_age, min_age
         return self._rng.next_range(min_age, max_age)
 
+    def _allocate_lineage_id(self) -> int:
+        lineage = self._next_lineage_id
+        self._next_lineage_id += 1
+        return lineage
+
     @staticmethod
     def _heading_from_velocity(vector: Vector2) -> float:
         return _heading_from_velocity(vector)
@@ -336,6 +353,51 @@ class World:
         energy_factor = min(1.0, agent.energy / max(1e-5, self._config.species.reproduction_energy_threshold))
         size = 0.4 + 0.4 * maturity + 0.2 * energy_factor
         return max(0.1, min(1.0, size))
+
+    def _clamp_traits(self, traits: AgentTraits) -> AgentTraits:
+        clamp = self._config.evolution.clamp
+        traits.speed = _clamp_value(traits.speed, clamp.speed[0], clamp.speed[1])
+        traits.metabolism = _clamp_value(traits.metabolism, clamp.metabolism[0], clamp.metabolism[1])
+        traits.disease_resistance = _clamp_value(traits.disease_resistance, clamp.disease_resistance[0], clamp.disease_resistance[1])
+        traits.fertility = _clamp_value(traits.fertility, clamp.fertility[0], clamp.fertility[1])
+        return traits
+
+    def _copy_traits(self, traits: AgentTraits) -> AgentTraits:
+        return AgentTraits(
+            speed=traits.speed,
+            metabolism=traits.metabolism,
+            disease_resistance=traits.disease_resistance,
+            fertility=traits.fertility,
+        )
+
+    def _mutate_traits(self, parent_traits: AgentTraits) -> AgentTraits:
+        evolution = self._config.evolution
+        mutated = self._copy_traits(parent_traits)
+        strength = evolution.mutation_strength
+        if strength <= 0.0:
+            return self._clamp_traits(mutated)
+        mutated.speed += self._rng.next_range(-strength, strength) * evolution.speed_mutation_weight
+        mutated.metabolism += self._rng.next_range(-strength, strength) * evolution.metabolism_mutation_weight
+        mutated.disease_resistance += self._rng.next_range(-strength, strength) * evolution.disease_resistance_mutation_weight
+        mutated.fertility += self._rng.next_range(-strength, strength) * evolution.fertility_mutation_weight
+        return self._clamp_traits(mutated)
+
+    def _trait_reproduction_factor(self, traits: AgentTraits) -> float:
+        resistance_penalty = 0.7 + 0.3 / max(0.5, traits.disease_resistance)
+        speed_penalty = 0.8 + 0.2 / max(0.6, traits.speed)
+        fertility_bonus = traits.fertility
+        factor = fertility_bonus * resistance_penalty * speed_penalty
+        return _clamp_value(factor, 0.35, 1.5)
+
+    def _trait_speed_limit(self, traits: AgentTraits) -> float:
+        return self._config.species.base_speed * traits.speed
+
+    def _trait_metabolism_multiplier(self, traits: AgentTraits) -> float:
+        speed_penalty = 0.6 + 0.4 * traits.speed
+        return _clamp_value(traits.metabolism * speed_penalty, 0.2, 2.5)
+
+    def _trait_disease_resistance(self, traits: AgentTraits) -> float:
+        return _clamp_value(traits.disease_resistance, 0.25, 4.0)
 
     def _agent_snapshot(self, agent: Agent) -> Dict[str, float]:
         speed = agent.velocity.length()
@@ -354,7 +416,9 @@ class World:
             "is_alive": agent.alive,
             "speed": speed,
             "heading": agent.heading,
-            "species_id": 0,
+            "lineage_id": agent.lineage_id,
+            "generation": agent.generation,
+            "trait_speed": agent.traits.speed,
             "appearance_seed": agent.id,
             "importance": 1.0,
         }
@@ -594,7 +658,12 @@ class World:
         self._pending_group_food.append((agent.position, agent.group_id, amount))
 
     def _compute_desired_velocity(
-        self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2], return_sensed: bool = False
+        self,
+        agent: Agent,
+        neighbors: List[Agent],
+        neighbor_offsets: List[Vector2],
+        base_speed: float,
+        return_sensed: bool = False,
     ) -> tuple[Vector2, bool] | Vector2:
         desired = ZERO
         flee_vector = ZERO
@@ -602,7 +671,6 @@ class World:
         species = self._config.species
         feedback = self._config.feedback
         environment = self._config.environment
-        base_speed = species.base_speed
 
         danger_level = self._environment.sample_danger(agent.position)
         if danger_level > 0.1:
@@ -611,13 +679,13 @@ class World:
             if danger_gradient.length_squared() < 1e-4:
                 danger_gradient = self._rng.next_unit_circle()
             flee_vector = flee_vector - _safe_normalize(danger_gradient) * (
-                self._config.species.base_speed * min(1.0, danger_level)
+                base_speed * min(1.0, danger_level)
             )
 
         for other, offset in zip(neighbors, neighbor_offsets):
             groups_differ = agent.group_id != self._UNGROUPED and other.group_id != self._UNGROUPED and other.group_id != agent.group_id
             if groups_differ and offset.length_squared() < 4.0:
-                flee_vector = flee_vector - _safe_normalize(offset) * self._config.species.base_speed
+                flee_vector = flee_vector - _safe_normalize(offset) * base_speed
                 sensed_danger = True
 
         if flee_vector.length_squared() > 1e-3:
@@ -670,7 +738,7 @@ class World:
             turn = min(1.0, boundary_proximity * self._config.boundary_turn_weight)
             inward = boundary_bias * base_speed
             desired = desired + (inward - desired) * turn
-        desired = desired - danger_bias * (self._config.species.base_speed * 0.2)
+        desired = desired - danger_bias * (base_speed * 0.2)
         if return_sensed:
             return desired, sensed_danger
         return desired
@@ -1005,16 +1073,21 @@ class World:
         births_added = 0
         if population is None:
             population = len(self._agents)
-        speed_cost = agent.velocity.length() * 0.05
-        metabolism = self._config.species.metabolism_per_second * dt + speed_cost * dt
+        traits = self._clamp_traits(agent.traits)
+        metabolism_multiplier = self._trait_metabolism_multiplier(traits)
+        speed_cost = agent.velocity.length() * 0.05 * metabolism_multiplier
+        metabolism = (self._config.species.metabolism_per_second * metabolism_multiplier + speed_cost) * dt
         excess_energy = max(0.0, agent.energy - self._config.species.energy_soft_cap)
-        metabolism += excess_energy * self._config.species.high_energy_metabolism_slope * dt
+        metabolism += excess_energy * self._config.species.high_energy_metabolism_slope * dt * metabolism_multiplier
         stress_drain = neighbor_count * self._config.feedback.stress_drain_per_neighbor * dt
         agent.energy -= metabolism + stress_drain + agent.stress * dt
 
         if neighbor_count > self._config.feedback.local_density_soft_cap:
             agent.stress += 0.1 * dt
-            if self._rng.next_float() < neighbor_count * self._config.feedback.disease_probability_per_neighbor * dt:
+            disease_resistance = self._trait_disease_resistance(traits)
+            disease_risk = neighbor_count * self._config.feedback.disease_probability_per_neighbor * dt
+            disease_risk = disease_risk / max(0.1, disease_resistance)
+            if self._rng.next_float() < disease_risk:
                 agent.alive = False
                 self._pending_food.append((agent.position, self._config.environment.food_from_death))
                 return births_added
@@ -1058,7 +1131,8 @@ class World:
                     self._config.feedback.group_reproduction_min_factor,
                     1.0 - penalty,
                 )
-            reproduction_chance = max(0.0, min(1.0, 0.25 * density_factor * group_factor))
+            trait_factor = self._trait_reproduction_factor(traits)
+            reproduction_chance = max(0.0, min(1.0, 0.25 * density_factor * group_factor * trait_factor))
             if self._rng.next_float() < reproduction_chance:
                 child_energy = agent.energy * 0.5
                 agent.energy -= child_energy + self._config.species.birth_energy_cost
@@ -1071,16 +1145,28 @@ class World:
                     else 0.0
                 )
                 spawn_distance = max(0.5, float(self._config.feedback.min_separation_distance))
+                child_lineage = agent.lineage_id
+                child_traits = self._copy_traits(traits)
+                if self._config.evolution.enabled:
+                    if (
+                        self._config.evolution.lineage_mutation_chance > 0.0
+                        and self._rng.next_float() < self._config.evolution.lineage_mutation_chance
+                    ):
+                        child_lineage = self._allocate_lineage_id()
+                    child_traits = self._mutate_traits(traits)
+                child_velocity = _clamp_length(agent.velocity, self._trait_speed_limit(child_traits))
                 child = Agent(
                     id=self._next_id,
                     generation=agent.generation + 1,
                     group_id=child_group,
                     position=agent.position + self._rng.next_unit_circle() * spawn_distance,
-                    velocity=agent.velocity,
-                    heading=agent.heading,
+                    velocity=child_velocity,
+                    heading=self._heading_from_velocity(child_velocity),
                     energy=child_energy,
                     age=0.0,
                     state=AgentState.WANDER,
+                    lineage_id=child_lineage,
+                    traits=child_traits,
                     group_cooldown=child_cooldown,
                 )
                 self._next_id += 1
@@ -1201,6 +1287,9 @@ class World:
 
     def _refresh_index_map(self) -> None:
         self._id_to_index = {agent.id: i for i, agent in enumerate(self._agents)}
+        if self._agents:
+            max_lineage = max(agent.lineage_id for agent in self._agents)
+            self._next_lineage_id = max(self._next_lineage_id, max_lineage + 1)
 
     def _remove_dead(self) -> int:
         deaths = 0

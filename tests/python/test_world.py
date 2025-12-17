@@ -4,7 +4,14 @@ from pygame.math import Vector2
 from pytest import approx
 
 from terrarium.agent import Agent, AgentState
-from terrarium.config import EnvironmentConfig, FeedbackConfig, SimulationConfig, SpeciesConfig
+from terrarium.config import (
+    EnvironmentConfig,
+    EvolutionClampConfig,
+    EvolutionConfig,
+    FeedbackConfig,
+    SimulationConfig,
+    SpeciesConfig,
+)
 from terrarium.world import World
 
 
@@ -24,6 +31,60 @@ def test_deterministic_steps():
     config_b = SimulationConfig(seed=1234, initial_population=50, max_population=120)
     result_b = run_steps(config_b, 50)
     assert result_a == result_b
+
+
+def test_deterministic_steps_with_evolution_enabled():
+    evolution = EvolutionConfig(enabled=True, mutation_strength=0.03, lineage_mutation_chance=0.05)
+    config = SimulationConfig(seed=2024, initial_population=40, max_population=120, evolution=evolution)
+    result_a = run_steps(config, 40)
+    config_b = SimulationConfig(
+        seed=2024,
+        initial_population=40,
+        max_population=120,
+        evolution=EvolutionConfig(**evolution.__dict__),
+    )
+    result_b = run_steps(config_b, 40)
+    assert result_a == result_b
+
+
+def test_traits_respect_clamp_after_births():
+    evolution = EvolutionConfig(
+        enabled=True,
+        mutation_strength=0.2,
+        lineage_mutation_chance=0.2,
+        clamp=EvolutionClampConfig(
+            speed=(0.9, 1.1),
+            metabolism=(0.85, 1.2),
+            disease_resistance=(0.7, 1.4),
+            fertility=(0.6, 1.3),
+        ),
+    )
+    config = SimulationConfig(
+        seed=3030,
+        initial_population=12,
+        max_population=40,
+        evolution=evolution,
+        species=SpeciesConfig(
+            base_speed=4.0,
+            max_acceleration=10.0,
+            metabolism_per_second=0.2,
+            reproduction_energy_threshold=6.0,
+            adult_age=1.0,
+            initial_energy_fraction_of_threshold=2.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+        ),
+        environment=EnvironmentConfig(food_per_cell=9.0, food_regen_per_second=1.0),
+    )
+    world = World(config)
+    for tick in range(60):
+        world.step(tick)
+    clamp = evolution.clamp
+    for agent in world.agents:
+        assert clamp.speed[0] <= agent.traits.speed <= clamp.speed[1]
+        assert clamp.metabolism[0] <= agent.traits.metabolism <= clamp.metabolism[1]
+        assert clamp.disease_resistance[0] <= agent.traits.disease_resistance <= clamp.disease_resistance[1]
+        assert clamp.fertility[0] <= agent.traits.fertility <= clamp.fertility[1]
 
 
 def test_food_regen_noise_is_deterministic_and_bounded():
@@ -96,7 +157,7 @@ def test_snapshot_contains_metadata_and_agent_signals():
 
     assert snapshot.metrics.population == len(world.agents)
     payload = snapshot.agents[0]
-    for key in ["id", "x", "y", "vx", "vy", "group"]:
+    for key in ["id", "x", "y", "vx", "vy", "group", "lineage_id", "generation", "trait_speed"]:
         assert key in payload
     assert payload["heading"] == approx(world.agents[0].heading)
     assert payload["speed"] == approx(Vector2(payload["vx"], payload["vy"]).length())
@@ -958,7 +1019,8 @@ def test_personal_space_pushes_when_too_close():
         age=1.0,
         state=AgentState.WANDER,
     )
-    desired = world._compute_desired_velocity(agent, [other], [Vector2(0.2, 0.0)])
+    speed_cap = world._trait_speed_limit(agent.traits)
+    desired = world._compute_desired_velocity(agent, [other], [Vector2(0.2, 0.0)], speed_cap)
     assert desired.x < 0.0  # 押し返される
     # ほぼ一直線の押し返しになることを確認（y成分が小さい）
     assert abs(desired.y) < abs(desired.x) * 0.25
@@ -1066,7 +1128,8 @@ def test_intergroup_avoidance_applies_without_triggering_flee():
         state=AgentState.WANDER,
     )
 
-    desired = world._compute_desired_velocity(agent, [rival], [Vector2(3.0, 0.0)])
+    speed_cap = world._trait_speed_limit(agent.traits)
+    desired = world._compute_desired_velocity(agent, [rival], [Vector2(3.0, 0.0)], speed_cap)
 
     assert desired.x < 0.0  # 異グループから離れる
     assert abs(desired.y) < 1e-6
@@ -1134,7 +1197,8 @@ def test_ally_cohesion_weight_scales_pull():
             age=25.0,
             state=AgentState.WANDER,
         )
-        desired = world._compute_desired_velocity(agent, [ally], [Vector2(1.0, 0.0)])
+        speed_cap = world._trait_speed_limit(agent.traits)
+        desired = world._compute_desired_velocity(agent, [ally], [Vector2(1.0, 0.0)], speed_cap)
         return desired
 
     desired_low = compute_desired(config_low)
@@ -1250,7 +1314,8 @@ def test_group_base_attraction_pulls_toward_base():
         state=AgentState.WANDER,
     )
 
-    desired = world._compute_desired_velocity(agent, [], [])
+    speed_cap = world._trait_speed_limit(agent.traits)
+    desired = world._compute_desired_velocity(agent, [], [], speed_cap)
 
     assert desired.x < 0.0
     assert abs(desired.y) < 1e-6

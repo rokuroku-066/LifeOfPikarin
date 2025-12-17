@@ -137,8 +137,12 @@ function computeScale(agent, now, baseSizeOverride, desire) {
 }
 
 function computeColor(agent, now, desire) {
-  const hue = computeGroupHue(agent.group);
+  const baseHue = computeGroupHue(agent.group);
+  const lineageHue = Number.isFinite(agent?.lineage_id) ? agent.lineage_id : 0;
+  const hue = (baseHue + (lineageHue % 12) * 0.8) % 360;
   const baseLightness = energyToLightness(agent.energy, energyVisual);
+  const speedTrait = Number.isFinite(agent?.trait_speed) ? agent.trait_speed : 1;
+  const speedFactor = THREE.MathUtils.clamp(speedTrait, 0.5, 1.5);
   const computedDesire = desire ?? reproductionDesire(agent.energy, agent.age, agent.behavior_state, {
     reproductionThreshold: reproductionVisual.threshold,
     energySoftCap: reproductionVisual.softCap,
@@ -149,8 +153,10 @@ function computeColor(agent, now, desire) {
     frequencyHz: reproductionVisual.frequencyHz,
     phase: agentPhase(agent),
   });
-  const finalLightness = THREE.MathUtils.clamp(baseLightness + pulse, 0.12, 0.92);
-  tmpColor.setHSL(hue / 360, colorSaturation, finalLightness);
+  const speedLightness = THREE.MathUtils.clamp((speedFactor - 1) * 0.12, -0.12, 0.12);
+  const finalLightness = THREE.MathUtils.clamp(baseLightness + pulse + speedLightness, 0.12, 0.92);
+  const traitSaturation = THREE.MathUtils.clamp(colorSaturation * (1 + (speedFactor - 1) * 0.4), 0.4, 1.0);
+  tmpColor.setHSL(hue / 360, traitSaturation, finalLightness);
   return tmpColor;
 }
 
