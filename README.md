@@ -95,19 +95,20 @@ python -m terrarium.headless --steps 5000 --seed 42 --log artifacts/metrics_smok
 - エネルギー上限と代謝: `energy_soft_cap`, `high_energy_metabolism_slope`, `metabolism_per_second`, `initial_energy_fraction_of_threshold`
 - 繁殖トリガ: `reproduction_energy_threshold`, `adult_age`, `density_reproduction_slope`, `density_reproduction_penalty`
 - 寿命/密度死亡: `base_death_probability_per_second`, `age_death_probability_per_second`, `density_death_probability_per_neighbor_per_second`
-- 環境フィールド: `food_regen_per_second`, `food_from_death`, `pheromone_diffusion_rate` / `pheromone_decay_rate`, `pheromone_deposit_on_birth`
-- フィールド更新頻度: `environment_tick_interval`（既定 0.36 秒）。食料/フェロモン等の拡散・減衰をこの周期でまとめて処理し、CPU 負荷を抑えます。
-- 初期/最大個体数: `initial_population`（既定 260）, `max_population`（既定 700）。初期ブートストラップモードは廃止し、最初の tick から SpatialGrid で近傍を構築しつつ通常の群形成/フィードバックを適用します。
+- 環境フィールド: `food_regen_per_second`, `food_from_death`, `pheromone_diffusion_rate` / `pheromone_decay_rate`, `pheromone_deposit_on_birth`, `danger_diffusion_rate` / `danger_decay_rate`, `group_food_max_per_cell` など
+- フィールド更新頻度: `environment_tick_interval`（既定 6.0 秒）。食料/フェロモン/危険/グループ食料の拡散・減衰をこの周期でバッチ処理し、CPU 負荷を抑えます。
+- 食料ノイズと資源パッチ: `food_regen_noise_amplitude` / `food_regen_noise_interval_seconds` / `food_regen_noise_smooth_seconds` で決定論的な気候変動を掛け、`resource_patches` で特定エリアに高密度/高速再生の食料を配置できます。
+- 初期/最大個体数: `initial_population`（既定 200）, `max_population`（既定 700）。初期ブートストラップモードは廃止し、最初の tick から SpatialGrid で近傍を構築しつつ通常の群形成/フィードバックを適用します。
 - 境界バイアス: `boundary_margin` 内では `boundary_avoidance_weight` で内側へ押し戻し、`boundary_turn_weight` で進行方向を内向きに寄せ、反射境界と併用して滑らかに折り返します。
-- ランダム歩行の更新周期: `wander_refresh_seconds`（既定 0.14 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
+- ランダム歩行の更新周期: `wander_refresh_seconds`（既定 0.12 秒）。この周期で各個体のランダム方向を更新し、RNG 呼び出しを削減します。
 - 近距離の押し返し: `personal_space_radius`, `personal_space_weight`, `min_separation_distance`, `min_separation_weight`
 - 孤立時の再コロニー化: 近距離の味方が一定秒数見つからない場合は `group_switch_chance` で近傍多数派へ乗り換え、閾値を満たさなければ `group_detach_new_group_chance` で新グループを立ち上げます（外れた場合は未所属に戻る）。
 - グループ形成・分離: `group_formation_warmup_seconds`, `group_formation_chance`, `group_adoption_chance`, `group_split_chance`, `group_split_size_bonus_per_neighbor`, `group_split_chance_max`, `group_split_recruitment_count`, `group_merge_cooldown_seconds`, `group_adoption_guard_min_allies` など
-- グループ上限: `feedback.max_groups`（既定 10）。上限を超える新規グループ生成を抑止し、長時間回帰テストの範囲内に収めます。
+- グループ上限: `feedback.max_groups`（既定 100）。上限を超える新規グループ生成を抑止し、長時間回帰テストの範囲内に収めます。
 - グループ内の繁殖抑制: `group_reproduction_penalty_per_ally`（同グループ近傍1人あたりの繁殖率低下量）と `group_reproduction_min_factor`（下限）
 - 拠点（group base）への弱い引力: `group_base_attraction_weight`, `group_base_dead_zone`, `group_base_soft_radius`
 - 群れ間距離/結束: `ally_cohesion_weight`, `ally_separation_weight`, `other_group_separation_weight`, `other_group_avoid_radius`, `other_group_avoid_weight`（同グループは密集、異グループは早めに距離を取る調整用）
-- 進化設定: `evolution.enabled`（既定 False）で遺伝的形質伝搬を有効化。`mutation_strength` と `lineage_mutation_chance`、各トレイトの `clamp` 範囲、重み（`*_mutation_weight`）で変異幅を調整し、無効時は既存 RNG 消費と挙動を変えません。
+- 進化設定: `evolution.enabled`（既定 True）で遺伝的形質伝搬を有効化。`mutation_strength` と `lineage_mutation_chance`、各トレイトの `clamp` 範囲、重み（`*_mutation_weight`）で変異幅を調整し、無効時は既存 RNG 消費と挙動を変えません。
 
 ---
 
@@ -168,10 +169,12 @@ npm run test:js
 
 ### 環境フィールド
 
-`EnvironmentGrid` はセル毎に `food`・`pheromone`（グループ別）の 2 スカラーフィールドを持ち、毎ステップで減衰と隣接セルへの拡散を行います。
+`EnvironmentGrid` はセル毎に `food`・`pheromone`（グループ別）・`danger`・`group_food` の 4 フィールドを持ち、`environment_tick_interval` ごとに減衰と隣接セルへの拡散をまとめて行います。
 
-- `food`: パッチ定義で初期化され、時間経過で再生・拡散し、消費や死亡で追加されます。`AgentState.SEEKING_FOOD` では `food` 勾配を優先します。
+- `food`: パッチ定義で初期化され、時間経過で再生・拡散し、消費や死亡で追加されます。`food_regen_noise_*` の決定論的ノイズで再生量が揺らぎます。`AgentState.SEEKING_FOOD` では `food` 勾配を優先します。
 - `pheromone`: 繁殖成功地点で自グループのフェロモンを撒き、グループ固有の濃度勾配が Cohesion に寄与します。拡散はワールド境界にクランプされ、`pheromone_decay_rate` > 0（デフォルト 0.05）で長時間走行時もフィールドサイズが暴走しません。
+- `danger`: 他グループとの至近遭遇や逃走でパルスが追加され、FLEE のトリガーや方向バイアスになります。拡散・減衰で徐々に消えるため、決定論を維持しつつ局所的に留まります。
+- `group_food`: 近距離の同盟が多いとスポーンし、そのグループだけが優先して消費します。グループ解散時はフィールドごと pruning されます。
 
 ---
 
