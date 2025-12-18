@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
+from time import perf_counter
 
 from pygame.math import Vector2
 
@@ -105,6 +106,7 @@ class World:
         self._id_to_index: Dict[int, int] = {}
         self._neighbor_offsets: List[Vector2] = []
         self._neighbor_agents: List[Agent] = []
+        self._neighbor_dist_sq: List[float] = []
         self._group_scratch: Set[int] = set()
         self._pending_food: List[tuple[Vector2, float]] = []
         self._pending_danger: List[tuple[Vector2, float]] = []
@@ -141,6 +143,7 @@ class World:
         self._grid.clear()
         self._neighbor_offsets.clear()
         self._neighbor_agents.clear()
+        self._neighbor_dist_sq.clear()
         self._group_scratch.clear()
         self._pending_food.clear()
         self._pending_danger.clear()
@@ -164,8 +167,6 @@ class World:
         self._bootstrap_population()
 
     def step(self, tick: int) -> TickMetrics:
-        from time import perf_counter
-
         start = perf_counter()
         config = self._config
         species = config.species
@@ -205,8 +206,8 @@ class World:
             same_group_neighbors = 0
             close_allies = 0
             original_group = agent.group_id
-            self._clamp_traits(agent.traits)
-            speed_limit = self._trait_speed_limit(agent.traits)
+            traits = self._clamp_traits(agent.traits)
+            speed_limit = self._trait_speed_limit(traits)
 
             self._grid.collect_neighbors_precomputed(
                 agent.position,
@@ -217,29 +218,39 @@ class World:
                 exclude_id=agent.id,
             )
             neighbor_checks += len(self._neighbor_agents)
-            if original_group != self._UNGROUPED:
-                for other, offset in zip(self._neighbor_agents, self._neighbor_offsets):
-                    if other.group_id == original_group:
-                        same_group_neighbors += 1
-                        if cluster_radius_sq > 1e-9 and offset.length_squared() <= cluster_radius_sq:
-                            close_allies += 1
+            neighbor_dist_sq = self._neighbor_dist_sq
+            neighbor_dist_sq.clear()
+            for other, offset in zip(self._neighbor_agents, self._neighbor_offsets):
+                dist_sq = offset.x * offset.x + offset.y * offset.y
+                neighbor_dist_sq.append(dist_sq)
+                if original_group != self._UNGROUPED and other.group_id == original_group:
+                    same_group_neighbors += 1
+                    if cluster_radius_sq > 1e-9 and dist_sq <= cluster_radius_sq:
+                        close_allies += 1
 
-            self._update_group_membership(agent, self._neighbor_agents, self._neighbor_offsets, can_form_groups)
+            self._update_group_membership(
+                agent, self._neighbor_agents, self._neighbor_offsets, neighbor_dist_sq, can_form_groups
+            )
             if agent.group_id != original_group:
                 close_allies = 0
                 if agent.group_id != self._UNGROUPED and cluster_radius_sq > 1e-9:
-                    for other, offset in zip(self._neighbor_agents, self._neighbor_offsets):
-                        if other.group_id == agent.group_id and offset.length_squared() <= cluster_radius_sq:
+                    for other, dist_sq in zip(self._neighbor_agents, neighbor_dist_sq):
+                        if other.group_id == agent.group_id and dist_sq <= cluster_radius_sq:
                             close_allies += 1
 
             desired, sensed_danger = self._compute_desired_velocity(
-                agent, self._neighbor_agents, self._neighbor_offsets, speed_limit, return_sensed=True
+                agent,
+                self._neighbor_agents,
+                self._neighbor_offsets,
+                speed_limit,
+                return_sensed=True,
+                neighbor_dist_sq=neighbor_dist_sq,
             )
             accel = desired - agent.velocity
             accel = _clamp_length(accel, species.max_acceleration)
             agent.velocity = _clamp_length(agent.velocity + accel * dt, speed_limit)
             new_position = agent.position + agent.velocity * dt
-            new_position = self._resolve_overlap(new_position, self._neighbor_offsets)
+            new_position = self._resolve_overlap(new_position, self._neighbor_offsets, neighbor_dist_sq)
             agent.position, agent.velocity = self._reflect(new_position, agent.velocity, config.world_size)
             self._update_heading(agent)
             agent.age += dt
@@ -251,6 +262,7 @@ class World:
                 can_form_groups,
                 current_population,
                 sim_time,
+                traits=traits,
             )
             if agent.alive:
                 self._maybe_spawn_group_food(agent, close_allies)
@@ -480,7 +492,12 @@ class World:
             self._set_group(recruit, new_group)
 
     def _update_group_membership(
-        self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2], can_form_groups: bool
+        self,
+        agent: Agent,
+        neighbors: List[Agent],
+        neighbor_offsets: List[Vector2],
+        neighbor_dist_sq: List[float],
+        can_form_groups: bool,
     ) -> None:
         original_group = agent.group_id
         prev_lonely = agent.group_lonely_seconds
@@ -492,12 +509,12 @@ class World:
         detach_radius_sq = self._config.feedback.group_detach_radius * self._config.feedback.group_detach_radius
         close_threshold = self._config.feedback.group_detach_close_neighbor_threshold
 
-        for other, offset in zip(neighbors, neighbor_offsets):
+        for other, offset, dist_sq in zip(neighbors, neighbor_offsets, neighbor_dist_sq):
             if other.group_id == self._UNGROUPED:
                 self._ungrouped_neighbors.append(other)
             if agent.group_id != self._UNGROUPED and other.group_id == agent.group_id:
                 same_group_neighbors += 1
-                if offset.length_squared() <= detach_radius_sq:
+                if dist_sq <= detach_radius_sq:
                     same_group_close_neighbors += 1
             if other.group_id >= 0:
                 self._group_counts_scratch[other.group_id] = self._group_counts_scratch.get(other.group_id, 0) + 1
@@ -664,6 +681,7 @@ class World:
         neighbor_offsets: List[Vector2],
         base_speed: float,
         return_sensed: bool = False,
+        neighbor_dist_sq: List[float] | None = None,
     ) -> tuple[Vector2, bool] | Vector2:
         desired = ZERO
         flee_vector = ZERO
@@ -671,20 +689,29 @@ class World:
         species = self._config.species
         feedback = self._config.feedback
         environment = self._config.environment
+        dist_sq_list = neighbor_dist_sq
+        if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
+            dist_sq_list = self._neighbor_dist_sq
+            dist_sq_list.clear()
+            for offset in neighbor_offsets:
+                dist_sq_list.append(offset.x * offset.x + offset.y * offset.y)
 
         danger_level = self._environment.sample_danger(agent.position)
+        danger_gradient = ZERO
+        danger_present = danger_level > 1e-6 or self._environment.has_danger()
+        if danger_present:
+            danger_gradient = self._danger_gradient(agent.position)
         if danger_level > 0.1:
             sensed_danger = True
-            danger_gradient = self._danger_gradient(agent.position)
             if danger_gradient.length_squared() < 1e-4:
                 danger_gradient = self._rng.next_unit_circle()
             flee_vector = flee_vector - _safe_normalize(danger_gradient) * (
                 base_speed * min(1.0, danger_level)
             )
 
-        for other, offset in zip(neighbors, neighbor_offsets):
+        for other, dist_sq, offset in zip(neighbors, dist_sq_list, neighbor_offsets):
             groups_differ = agent.group_id != self._UNGROUPED and other.group_id != self._UNGROUPED and other.group_id != agent.group_id
-            if groups_differ and offset.length_squared() < 4.0:
+            if groups_differ and dist_sq < 4.0:
                 flee_vector = flee_vector - _safe_normalize(offset) * base_speed
                 sensed_danger = True
 
@@ -695,11 +722,11 @@ class World:
         food_here = self._environment.sample_food(agent.position)
         food_gradient = ZERO
         pheromone_gradient = ZERO if agent.group_id == self._UNGROUPED else self._pheromone_gradient(agent.group_id, agent.position)
-        danger_gradient_away = self._danger_gradient(agent.position)
-        group_cohesion_bias = self._group_cohesion(agent, neighbors, neighbor_offsets)
-        group_seek_bias = self._group_seek_bias(agent, neighbors, neighbor_offsets)
-        intergroup_bias = self._intergroup_avoidance(agent, neighbors, neighbor_offsets)
-        personal_space_bias = self._personal_space(neighbor_offsets)
+        danger_gradient_away = danger_gradient
+        group_cohesion_bias = self._group_cohesion(agent, neighbors, neighbor_offsets, dist_sq_list)
+        group_seek_bias = self._group_seek_bias(agent, neighbors, neighbor_offsets, dist_sq_list)
+        intergroup_bias = self._intergroup_avoidance(agent, neighbors, neighbor_offsets, dist_sq_list)
+        personal_space_bias = self._personal_space(neighbor_offsets, dist_sq_list)
         base_bias = self._group_base_attraction(agent)
 
         food_bias = ZERO
@@ -726,7 +753,7 @@ class World:
         desired = desired + personal_space_bias * (base_speed * feedback.personal_space_weight)
         desired = desired + intergroup_bias * (base_speed * feedback.other_group_avoid_weight)
         desired = desired + group_seek_bias * (base_speed * feedback.group_seek_weight)
-        desired = desired + self._separation(agent, neighbors, neighbor_offsets) * (base_speed * 1.4)
+        desired = desired + self._separation(agent, neighbors, neighbor_offsets, dist_sq_list) * (base_speed * 1.4)
         desired = desired + self._alignment(agent, neighbors) * (base_speed * 0.3)
         desired = desired + group_cohesion_bias * (
             base_speed * feedback.group_cohesion_weight * feedback.ally_cohesion_weight
@@ -743,16 +770,24 @@ class World:
             return desired, sensed_danger
         return desired
 
-    def _separation(self, agent: Agent, neighbors: List[Agent], neighbor_vectors: List[Vector2]) -> Vector2:
+    def _separation(
+        self,
+        agent: Agent,
+        neighbors: List[Agent],
+        neighbor_vectors: List[Vector2],
+        neighbor_dist_sq: List[float] | None = None,
+    ) -> Vector2:
         if not neighbor_vectors:
             return ZERO
+        dist_sq_list = neighbor_dist_sq
+        if dist_sq_list is None or len(dist_sq_list) != len(neighbor_vectors):
+            dist_sq_list = [offset.length_squared() for offset in neighbor_vectors]
         accum = ZERO
         closest_dist_sq = float("inf")
         min_sep = max(0.0, float(self._config.feedback.min_separation_distance))
         min_sep_sq = min_sep * min_sep
         min_sep_weight = max(0.0, float(self._config.feedback.min_separation_weight))
-        for other, offset in zip(neighbors, neighbor_vectors):
-            raw_dist_sq = offset.length_squared()
+        for other, offset, raw_dist_sq in zip(neighbors, neighbor_vectors, dist_sq_list):
             if raw_dist_sq < closest_dist_sq:
                 closest_dist_sq = raw_dist_sq
             dist_sq = max(raw_dist_sq, 0.1)
@@ -776,15 +811,19 @@ class World:
                 accum = accum * scale
         return _clamp_length(accum, 3.5)
 
-    def _resolve_overlap(self, position: Vector2, neighbor_offsets: List[Vector2]) -> Vector2:
+    def _resolve_overlap(
+        self, position: Vector2, neighbor_offsets: List[Vector2], neighbor_dist_sq: List[float] | None = None
+    ) -> Vector2:
         min_sep = max(0.0, float(self._config.feedback.min_separation_distance))
         if min_sep <= 1e-6 or not neighbor_offsets:
             return position
+        dist_sq_list = neighbor_dist_sq
+        if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
+            dist_sq_list = [offset.length_squared() for offset in neighbor_offsets]
         min_sep_sq = min_sep * min_sep
         correction = ZERO
         count = 0
-        for offset in neighbor_offsets:
-            dist_sq = offset.length_squared()
+        for offset, dist_sq in zip(neighbor_offsets, dist_sq_list):
             if dist_sq <= 1e-12 or dist_sq >= min_sep_sq:
                 continue
             dist = math.sqrt(dist_sq)
@@ -813,7 +852,13 @@ class World:
             return ZERO
         return _safe_normalize(accum / count)
 
-    def _group_seek_bias(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> Vector2:
+    def _group_seek_bias(
+        self,
+        agent: Agent,
+        neighbors: List[Agent],
+        neighbor_offsets: List[Vector2],
+        neighbor_dist_sq: List[float] | None = None,
+    ) -> Vector2:
         if agent.group_id != self._UNGROUPED:
             return ZERO
         radius = max(0.0, float(self._config.feedback.group_seek_radius))
@@ -823,6 +868,9 @@ class World:
         accum = ZERO
         weight_sum = 0.0
         base_bias = ZERO
+        dist_sq_list = neighbor_dist_sq
+        if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
+            dist_sq_list = [offset.length_squared() for offset in neighbor_offsets]
         if self._group_bases:
             nearest_offset: Optional[Vector2] = None
             nearest_dist_sq = radius_sq
@@ -838,10 +886,9 @@ class World:
                 falloff = 1.0 - min(1.0, math.sqrt(nearest_dist_sq) / radius)
                 if falloff > 1e-6:
                     base_bias = _safe_normalize(nearest_offset) * falloff
-        for other, offset in zip(neighbors, neighbor_offsets):
+        for other, offset, dist_sq in zip(neighbors, neighbor_offsets, dist_sq_list):
             if other.group_id == self._UNGROUPED:
                 continue
-            dist_sq = offset.length_squared()
             if dist_sq <= 1e-12 or dist_sq > radius_sq:
                 continue
             falloff = 1.0 - min(1.0, math.sqrt(dist_sq) / radius)
@@ -856,16 +903,25 @@ class World:
             blended = blended + base_bias
         return _safe_normalize(blended)
 
-    def _group_cohesion(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> Vector2:
+    def _group_cohesion(
+        self,
+        agent: Agent,
+        neighbors: List[Agent],
+        neighbor_offsets: List[Vector2],
+        neighbor_dist_sq: List[float] | None = None,
+    ) -> Vector2:
         if agent.group_id == self._UNGROUPED:
             return ZERO
         cohesion_radius_sq = self._config.feedback.group_cohesion_radius * self._config.feedback.group_cohesion_radius
         accum = ZERO
         count = 0
-        for other, offset in zip(neighbors, neighbor_offsets):
+        dist_sq_list = neighbor_dist_sq
+        if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
+            dist_sq_list = [offset.length_squared() for offset in neighbor_offsets]
+        for other, offset, dist_sq in zip(neighbors, neighbor_offsets, dist_sq_list):
             if other.group_id != agent.group_id:
                 continue
-            if offset.length_squared() > cohesion_radius_sq:
+            if dist_sq > cohesion_radius_sq:
                 continue
             accum = accum + offset
             count += 1
@@ -897,15 +953,19 @@ class World:
             strength = t * t
         return _safe_normalize(to_base) * strength
 
-    def _personal_space(self, neighbor_offsets: List[Vector2]) -> Vector2:
+    def _personal_space(
+        self, neighbor_offsets: List[Vector2], neighbor_dist_sq: List[float] | None = None
+    ) -> Vector2:
         radius = self._config.feedback.personal_space_radius
         if radius <= 1e-6 or not neighbor_offsets:
             return ZERO
         radius_sq = radius * radius
+        dist_sq_list = neighbor_dist_sq
+        if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
+            dist_sq_list = [offset.length_squared() for offset in neighbor_offsets]
         accum = ZERO
         count = 0
-        for offset in neighbor_offsets:
-            dist_sq = offset.length_squared()
+        for offset, dist_sq in zip(neighbor_offsets, dist_sq_list):
             if dist_sq <= 1e-9 or dist_sq > radius_sq:
                 continue
             dist = math.sqrt(dist_sq)
@@ -916,19 +976,27 @@ class World:
             return ZERO
         return _safe_normalize(accum / count)
 
-    def _intergroup_avoidance(self, agent: Agent, neighbors: List[Agent], neighbor_offsets: List[Vector2]) -> Vector2:
+    def _intergroup_avoidance(
+        self,
+        agent: Agent,
+        neighbors: List[Agent],
+        neighbor_offsets: List[Vector2],
+        neighbor_dist_sq: List[float] | None = None,
+    ) -> Vector2:
         radius = self._config.feedback.other_group_avoid_radius
         if radius <= 1e-6:
             return ZERO
         radius_sq = radius * radius
+        dist_sq_list = neighbor_dist_sq
+        if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
+            dist_sq_list = [offset.length_squared() for offset in neighbor_offsets]
         accum = ZERO
         count = 0
-        for other, offset in zip(neighbors, neighbor_offsets):
+        for other, offset, dist_sq in zip(neighbors, neighbor_offsets, dist_sq_list):
             if agent.group_id == self._UNGROUPED or other.group_id == self._UNGROUPED:
                 continue
             if other.group_id == agent.group_id:
                 continue
-            dist_sq = offset.length_squared()
             if dist_sq <= 1e-9 or dist_sq > radius_sq:
                 continue
             falloff = 1.0 - min(1.0, math.sqrt(dist_sq) / radius)
@@ -1068,12 +1136,13 @@ class World:
         can_create_groups: bool,
         population: int | None = None,
         sim_time: float = 0.0,
+        traits: AgentTraits | None = None,
     ) -> int:
         dt = self._config.time_step
         births_added = 0
         if population is None:
             population = len(self._agents)
-        traits = self._clamp_traits(agent.traits)
+        traits = self._clamp_traits(agent.traits) if traits is None else traits
         metabolism_multiplier = self._trait_metabolism_multiplier(traits)
         speed_cost = agent.velocity.length() * 0.05 * metabolism_multiplier
         metabolism = (self._config.species.metabolism_per_second * metabolism_multiplier + speed_cost) * dt

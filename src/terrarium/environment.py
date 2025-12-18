@@ -8,6 +8,8 @@ from pygame.math import Vector2
 
 from .config import EnvironmentConfig, ResourcePatchConfig
 
+_ORTHOGONAL_OFFSETS: Tuple[Tuple[int, int], ...] = ((1, 0), (-1, 0), (0, 1), (0, -1))
+
 
 @dataclass
 class FoodCell:
@@ -169,6 +171,9 @@ class EnvironmentGrid:
         key = self._cell_key(position)
         self._danger_field[key] = self._danger_field.get(key, 0.0) + amount
 
+    def has_danger(self) -> bool:
+        return bool(self._danger_field)
+
     def sample_pheromone(self, position: Vector2, group_id: int) -> float:
         field_key = (*self._cell_key(position), group_id)
         return self._pheromone_field.get(field_key, 0.0)
@@ -249,8 +254,7 @@ class EnvironmentGrid:
             share = spread * 0.25
 
             self._accumulate(self._group_food_buffer, key, remain)
-            offsets = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-            for ox, oy in offsets:
+            for ox, oy in _ORTHOGONAL_OFFSETS:
                 self._accumulate(self._group_food_buffer, self._add_key(key, ox, oy), share)
 
         self._group_food_field.clear()
@@ -269,8 +273,7 @@ class EnvironmentGrid:
             share = spread * 0.25
 
             self._accumulate(buffer, key, remain)
-            offsets = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-            for ox, oy in offsets:
+            for ox, oy in _ORTHOGONAL_OFFSETS:
                 self._accumulate(buffer, self._add_key(key, ox, oy), share)
 
         field.clear()
@@ -299,10 +302,19 @@ class EnvironmentGrid:
                 self._group_food_field.pop(key, None)
 
     def _add_key(self, key: Tuple[int, ...], dx: int, dy: int) -> Tuple[int, ...]:
-        key_list = list(key)
-        key_list[0] = max(0, min(self._max_index - 1, key_list[0] + dx))
-        key_list[1] = max(0, min(self._max_index - 1, key_list[1] + dy))
-        return tuple(key_list)
+        if len(key) == 2:
+            return self._add_key2(key, dx, dy)
+        return self._add_key3(key, dx, dy)
+
+    def _add_key2(self, key: Tuple[int, int], dx: int, dy: int) -> Tuple[int, int]:
+        clamped_x = max(0, min(self._max_index - 1, key[0] + dx))
+        clamped_y = max(0, min(self._max_index - 1, key[1] + dy))
+        return (clamped_x, clamped_y)
+
+    def _add_key3(self, key: Tuple[int, int, int], dx: int, dy: int) -> Tuple[int, int, int]:
+        clamped_x = max(0, min(self._max_index - 1, key[0] + dx))
+        clamped_y = max(0, min(self._max_index - 1, key[1] + dy))
+        return (clamped_x, clamped_y, key[2])
 
     def _accumulate(self, buffer: Dict[Tuple[int, ...], float], key: Tuple[int, ...], value: float) -> None:
         buffer[key] = buffer.get(key, 0.0) + value
