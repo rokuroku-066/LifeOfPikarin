@@ -13,8 +13,8 @@ class SpeciesConfig:
     max_acceleration: float = 20.0
     vision_radius: float = 3.0
     metabolism_per_second: float = 1.0
-    birth_energy_cost: float = 3.0
-    reproduction_energy_threshold: float = 12.8
+    birth_energy_cost: float = 10.0
+    reproduction_energy_threshold: float = 10
     adult_age: float = 6.0
     initial_age_min: float = 0.5
     initial_age_max: float = 0.0
@@ -22,8 +22,8 @@ class SpeciesConfig:
     wander_jitter: float = 0.25
     wander_refresh_seconds: float = 0.12
     initial_energy_fraction_of_threshold: float = 1.3
-    energy_soft_cap: float = 14.0
-    high_energy_metabolism_slope: float = 0.08
+    energy_soft_cap: float = 20.0
+    high_energy_metabolism_slope: float = 0.00
 
 
 @dataclass
@@ -79,7 +79,7 @@ class FeedbackConfig:
     post_peak_group_seed_size: int = 4
     max_groups: int = 20
     group_formation_warmup_seconds: float = 0.0
-    group_formation_neighbor_threshold: int = 3
+    group_formation_neighbor_threshold: int = 5
     group_formation_chance: float = 0.07
     group_adoption_neighbor_threshold: int = 1
     group_adoption_chance: float = 0.5
@@ -135,7 +135,7 @@ class EvolutionClampConfig:
 
 @dataclass
 class EvolutionConfig:
-    enabled: bool = False
+    enabled: bool = True
     mutation_strength: float = 0.05
     lineage_mutation_chance: float = 0.01
     speed_mutation_weight: float = 1.0
