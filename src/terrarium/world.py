@@ -1132,7 +1132,8 @@ class World:
                     1.0 - penalty,
                 )
             trait_factor = self._trait_reproduction_factor(traits)
-            reproduction_chance = max(0.0, min(1.0, 0.25 * density_factor * group_factor * trait_factor))
+            base_reproduction = max(0.0, float(self._config.feedback.reproduction_base_chance))
+            reproduction_chance = max(0.0, min(1.0, base_reproduction * density_factor * group_factor * trait_factor))
             if self._rng.next_float() < reproduction_chance:
                 child_energy = agent.energy * 0.5
                 agent.energy -= child_energy + self._config.species.birth_energy_cost

@@ -37,15 +37,15 @@ class ResourcePatchConfig:
 
 @dataclass
 class EnvironmentConfig:
-    food_per_cell: float = 9.0
-    food_regen_per_second: float = 0.7
-    food_consumption_rate: float = 6.0
-    food_diffusion_rate: float = 0.1
+    food_per_cell: float = 12.0
+    food_regen_per_second: float = 2.1
+    food_consumption_rate: float = 6.5
+    food_diffusion_rate: float = 0.3
     food_decay_rate: float = 0.0
-    food_from_death: float = 12.0
-    food_regen_noise_amplitude: float = 0.9
-    food_regen_noise_interval_seconds: float = 30.0
-    food_regen_noise_smooth_seconds: float = 10.0
+    food_from_death: float = 5.0
+    food_regen_noise_amplitude: float = 0.5
+    food_regen_noise_interval_seconds: float = 12.0
+    food_regen_noise_smooth_seconds: float = 4.0
     resource_patches: List[ResourcePatchConfig] = field(default_factory=list)
     danger_diffusion_rate: float = 2.0
     danger_decay_rate: float = 1.0
@@ -53,7 +53,7 @@ class EnvironmentConfig:
     pheromone_diffusion_rate: float = 0.3
     pheromone_decay_rate: float = 0.05
     pheromone_deposit_on_birth: float = 4.0
-    group_food_max_per_cell: float = 6.0
+    group_food_max_per_cell: float = 3.0
     group_food_decay_rate: float = 0.25
     group_food_diffusion_rate: float = 0.07
 
@@ -61,21 +61,23 @@ class EnvironmentConfig:
 @dataclass
 class FeedbackConfig:
     local_density_soft_cap: int = 12
-    density_reproduction_penalty: float = 0.5
-    stress_drain_per_neighbor: float = 0.02
-    disease_probability_per_neighbor: float = 0.002
-    density_reproduction_slope: float = 0.03
+    density_reproduction_penalty: float = 0.65
+    stress_drain_per_neighbor: float = 0.03
+    disease_probability_per_neighbor: float = 0.0025
+    density_reproduction_slope: float = 0.02
+    reproduction_base_chance: float = 0.4
     base_death_probability_per_second: float = 0.0012
     age_death_probability_per_second: float = 0.00035
-    density_death_probability_per_neighbor_per_second: float = 0.00025
-    global_population_pressure_start: int = 300
-    global_population_pressure_slope: float = 0.005
+    density_death_probability_per_neighbor_per_second: float = 0.0005
+    # Remove global population death pressure; rely on resources + local density
+    global_population_pressure_start: int = 10_000
+    global_population_pressure_slope: float = 0.0
     global_population_pressure_delay_seconds: float = 4.0
     population_peak_threshold: int = 400
     post_peak_min_groups: int = 5
-    post_peak_max_groups: int = 15
+    post_peak_max_groups: int = 20
     post_peak_group_seed_size: int = 4
-    max_groups: int = 100
+    max_groups: int = 20
     group_formation_warmup_seconds: float = 0.0
     group_formation_neighbor_threshold: int = 3
     group_formation_chance: float = 0.07
@@ -83,7 +85,8 @@ class FeedbackConfig:
     group_adoption_chance: float = 0.5
     group_adoption_small_group_bonus: float = 0.4
     group_food_neighbor_threshold: int = 6
-    group_food_spawn_chance: float = 0.1
+    # Disable free group-food spawning (it injects energy and can mask scarcity)
+    group_food_spawn_chance: float = 0.0
     group_food_spawn_amount: float = 2.0
     group_split_neighbor_threshold: int = 5
     group_split_chance: float = 0.008
@@ -95,7 +98,7 @@ class FeedbackConfig:
     group_split_stress_threshold: float = 0.12
     group_merge_cooldown_seconds: float = 1.0
     group_adoption_guard_min_allies: int = 2
-    group_reproduction_penalty_per_ally: float = 0.03
+    group_reproduction_penalty_per_ally: float = 0.02
     group_reproduction_min_factor: float = 0.08
     group_birth_seed_chance: float = 0.03
     group_mutation_chance: float = 0.005
