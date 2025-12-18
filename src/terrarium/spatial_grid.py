@@ -28,12 +28,14 @@ class SpatialGrid:
         return [(dx, dy) for dx in range(-cell_range, cell_range + 1) for dy in range(-cell_range, cell_range + 1)]
 
     def clear(self) -> None:
-        for bucket in self._cells.values():
-            bucket.clear()
+        self._cells = {}
 
     def insert(self, agent_id: int, position: Vector2, agent: "Agent | None" = None) -> None:
         key = self._cell_key(position)
-        bucket = self._cells.setdefault(key, [])
+        bucket = self._cells.get(key)
+        if bucket is None:
+            bucket = []
+            self._cells[key] = bucket
         bucket.append(GridEntry(agent_id, position, agent))
 
     def get_neighbors(self, position: Vector2, radius: float) -> List[GridEntry]:
