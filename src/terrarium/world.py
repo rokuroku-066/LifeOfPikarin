@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
+from time import perf_counter
 
 from pygame.math import Vector2
 
@@ -166,8 +167,6 @@ class World:
         self._bootstrap_population()
 
     def step(self, tick: int) -> TickMetrics:
-        from time import perf_counter
-
         start = perf_counter()
         config = self._config
         species = config.species

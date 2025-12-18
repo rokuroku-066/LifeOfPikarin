@@ -42,6 +42,9 @@ class SpatialGrid:
             bucket = []
             self._cells[key] = bucket
             self._active_keys.append(key)
+        elif not bucket:
+            # Bucket exists but was cleared at the start of this tick; mark it active again.
+            self._active_keys.append(key)
         bucket.append(GridEntry(agent_id, position, agent))
 
     def get_neighbors(self, position: Vector2, radius: float) -> List[GridEntry]:

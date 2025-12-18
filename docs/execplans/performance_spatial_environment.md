@@ -13,10 +13,12 @@ Use a list with checkboxes to summarize granular steps. Every stopping point mus
 - [x] (2025-05-10 00:00Z) Drafted plan and gathered current code paths for SpatialGrid, EnvironmentGrid diffusion, and World neighbor handling.
 - [x] (2025-05-10 00:35Z) Implemented spatial grid clear/insert tweaks, environment diffusion allocation cuts, and neighbor distance reuse in world processing.
 - [x] (2025-05-10 00:38Z) Ran `pytest tests/python` after dependency check.
+- [x] (2025-05-10 01:05Z) Fixed SpatialGrid active key tracking, moved perf_counter import to module scope, and revalidated with `pytest tests/python`.
 
 ## Surprises & Discoveries
 
 - Unit tests require backward-compatible `_compute_desired_velocity` signature; added optional neighbor distance parameter instead of changing positional order.
+- SpatialGrid active key tracking needs to mark buckets reused within the same dict after a tick clear; otherwise stale entries accumulate.
 
 ## Decision Log
 
