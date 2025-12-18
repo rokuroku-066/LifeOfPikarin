@@ -22,13 +22,18 @@ class SpatialGrid:
         self._cell_size = cell_size
         self._cells: Dict[Tuple[int, int], List[GridEntry]] = {}
         self._neighbor_scratch: List[GridEntry] = []
+        self._active_keys: List[Tuple[int, int]] = []
 
     def build_neighbor_cell_offsets(self, radius: float) -> List[Tuple[int, int]]:
         cell_range = int(math.ceil(radius / self._cell_size))
         return [(dx, dy) for dx in range(-cell_range, cell_range + 1) for dy in range(-cell_range, cell_range + 1)]
 
     def clear(self) -> None:
-        self._cells = {}
+        for key in self._active_keys:
+            bucket = self._cells.get(key)
+            if bucket:
+                bucket.clear()
+        self._active_keys.clear()
 
     def insert(self, agent_id: int, position: Vector2, agent: "Agent | None" = None) -> None:
         key = self._cell_key(position)
@@ -36,6 +41,7 @@ class SpatialGrid:
         if bucket is None:
             bucket = []
             self._cells[key] = bucket
+            self._active_keys.append(key)
         bucket.append(GridEntry(agent_id, position, agent))
 
     def get_neighbors(self, position: Vector2, radius: float) -> List[GridEntry]:

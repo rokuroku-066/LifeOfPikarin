@@ -698,7 +698,10 @@ class World:
                 dist_sq_list.append(offset.x * offset.x + offset.y * offset.y)
 
         danger_level = self._environment.sample_danger(agent.position)
-        danger_gradient = self._danger_gradient(agent.position)
+        danger_gradient = ZERO
+        danger_present = danger_level > 1e-6 or self._environment.has_danger()
+        if danger_present:
+            danger_gradient = self._danger_gradient(agent.position)
         if danger_level > 0.1:
             sensed_danger = True
             if danger_gradient.length_squared() < 1e-4:

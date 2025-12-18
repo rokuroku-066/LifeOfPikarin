@@ -171,6 +171,9 @@ class EnvironmentGrid:
         key = self._cell_key(position)
         self._danger_field[key] = self._danger_field.get(key, 0.0) + amount
 
+    def has_danger(self) -> bool:
+        return bool(self._danger_field)
+
     def sample_pheromone(self, position: Vector2, group_id: int) -> float:
         field_key = (*self._cell_key(position), group_id)
         return self._pheromone_field.get(field_key, 0.0)
@@ -299,11 +302,19 @@ class EnvironmentGrid:
                 self._group_food_field.pop(key, None)
 
     def _add_key(self, key: Tuple[int, ...], dx: int, dy: int) -> Tuple[int, ...]:
+        if len(key) == 2:
+            return self._add_key2(key, dx, dy)
+        return self._add_key3(key, dx, dy)
+
+    def _add_key2(self, key: Tuple[int, int], dx: int, dy: int) -> Tuple[int, int]:
         clamped_x = max(0, min(self._max_index - 1, key[0] + dx))
         clamped_y = max(0, min(self._max_index - 1, key[1] + dy))
-        if len(key) == 2:
-            return (clamped_x, clamped_y)
-        return (clamped_x, clamped_y, *key[2:])
+        return (clamped_x, clamped_y)
+
+    def _add_key3(self, key: Tuple[int, int, int], dx: int, dy: int) -> Tuple[int, int, int]:
+        clamped_x = max(0, min(self._max_index - 1, key[0] + dx))
+        clamped_y = max(0, min(self._max_index - 1, key[1] + dy))
+        return (clamped_x, clamped_y, key[2])
 
     def _accumulate(self, buffer: Dict[Tuple[int, ...], float], key: Tuple[int, ...], value: float) -> None:
         buffer[key] = buffer.get(key, 0.0) + value
