@@ -226,7 +226,7 @@ class World:
                         close_allies += 1
 
             self._update_group_membership(
-                agent, self._neighbor_agents, self._neighbor_offsets, neighbor_dist_sq, can_form_groups
+                agent, self._neighbor_agents, self._neighbor_offsets, neighbor_dist_sq, can_form_groups, traits=traits
             )
             if agent.group_id != original_group:
                 close_allies = 0
@@ -505,9 +505,10 @@ class World:
         neighbor_offsets: List[Vector2],
         neighbor_dist_sq: List[float],
         can_form_groups: bool,
+        traits: AgentTraits | None = None,
     ) -> None:
         original_group = agent.group_id
-        traits = self._clamp_traits(agent.traits)
+        traits = self._clamp_traits(agent.traits) if traits is None else traits
         loyalty = max(0.1, traits.loyalty)
         kin_bias = traits.kin_bias
         prev_lonely = agent.group_lonely_seconds
@@ -586,7 +587,9 @@ class World:
         if can_form_groups:
             self._try_form_group(agent)
             if agent.group_id == original_group:
-                self._try_adopt_group(agent, majority_group, majority_count, same_group_neighbors)
+                self._try_adopt_group(
+                    agent, majority_group, majority_count, same_group_neighbors, traits=traits
+                )
         if agent.group_id == self._UNGROUPED and self._group_bases:
             seek_radius = self._config.feedback.group_seek_radius * 1.5
             seek_radius_sq = seek_radius * seek_radius
@@ -603,7 +606,9 @@ class World:
             if nearest_group != self._UNGROUPED and self._rng.next_float() < self._config.feedback.group_adoption_chance:
                 self._set_group(agent, nearest_group)
         if agent.group_id == original_group:
-            self._try_split_group(agent, same_group_neighbors, neighbors, neighbor_offsets, can_form_groups)
+            self._try_split_group(
+                agent, same_group_neighbors, neighbors, neighbor_offsets, can_form_groups, traits=traits
+            )
         self._group_counts_scratch.clear()
         self._group_lineage_counts.clear()
         self._ungrouped_neighbors.clear()
@@ -625,7 +630,12 @@ class World:
             self._set_group(neighbor, new_group)
 
     def _try_adopt_group(
-        self, agent: Agent, majority_group: int, majority_count: int, same_group_neighbors: int
+        self,
+        agent: Agent,
+        majority_group: int,
+        majority_count: int,
+        same_group_neighbors: int,
+        traits: AgentTraits | None = None,
     ) -> None:
         if majority_group == self._UNGROUPED or agent.group_id == majority_group:
             return
@@ -644,7 +654,7 @@ class World:
         base_chance = self._config.feedback.group_adoption_chance
         small_bonus = self._config.feedback.group_adoption_small_group_bonus
         size_for_bonus = max(1, target_size)
-        traits = self._clamp_traits(agent.traits)
+        traits = self._clamp_traits(agent.traits) if traits is None else traits
         sociality = max(0.0, traits.sociality)
         loyalty = max(0.1, traits.loyalty)
         adoption_chance = base_chance * (1.0 + small_bonus / size_for_bonus) * sociality
@@ -655,11 +665,17 @@ class World:
             self._set_group(agent, majority_group)
 
     def _try_split_group(
-        self, agent: Agent, same_group_neighbors: int, neighbors: List[Agent], neighbor_offsets: List[Vector2], can_form_groups: bool
+        self,
+        agent: Agent,
+        same_group_neighbors: int,
+        neighbors: List[Agent],
+        neighbor_offsets: List[Vector2],
+        can_form_groups: bool,
+        traits: AgentTraits | None = None,
     ) -> None:
         if agent.group_id == self._UNGROUPED:
             return
-        traits = self._clamp_traits(agent.traits)
+        traits = self._clamp_traits(agent.traits) if traits is None else traits
         if same_group_neighbors < self._config.feedback.group_split_neighbor_threshold:
             return
         effective_stress = agent.stress + same_group_neighbors * self._config.feedback.group_split_size_stress_weight

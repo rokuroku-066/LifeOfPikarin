@@ -148,6 +148,79 @@ def test_traits_respect_clamp_after_births():
         assert clamp.kin_bias[0] <= agent.traits.kin_bias <= clamp.kin_bias[1]
 
 
+def test_step_clamps_traits_at_entry():
+    clamp = EvolutionClampConfig(
+        speed=(0.8, 1.1),
+        metabolism=(0.7, 1.0),
+        disease_resistance=(0.6, 0.95),
+        fertility=(0.5, 0.9),
+        sociality=(0.4, 0.9),
+        territoriality=(0.3, 0.9),
+        loyalty=(0.2, 0.9),
+        founder=(0.1, 0.8),
+        kin_bias=(0.45, 0.75),
+    )
+    config = SimulationConfig(
+        seed=6060,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+        ),
+        evolution=EvolutionConfig(enabled=False, clamp=clamp),
+        feedback=FeedbackConfig(
+            reproduction_base_chance=0.0,
+            base_death_probability_per_second=0.0,
+            age_death_probability_per_second=0.0,
+            density_death_probability_per_neighbor_per_second=0.0,
+            group_split_chance=0.0,
+        ),
+    )
+    world = World(config)
+    world.agents.append(
+        Agent(
+            id=0,
+            generation=0,
+            group_id=World._UNGROUPED,
+            position=Vector2(0.0, 0.0),
+            velocity=Vector2(),
+            energy=10.0,
+            age=5.0,
+            state=AgentState.WANDER,
+            traits=AgentTraits(
+                speed=1.5,
+                metabolism=1.3,
+                disease_resistance=1.2,
+                fertility=1.4,
+                sociality=1.5,
+                territoriality=1.6,
+                loyalty=1.7,
+                founder=1.8,
+                kin_bias=1.9,
+            ),
+        )
+    )
+    world._next_id = 1
+    world._refresh_index_map()
+
+    world.step(0)
+
+    traits = world.agents[0].traits
+    assert clamp.speed[0] <= traits.speed <= clamp.speed[1]
+    assert clamp.metabolism[0] <= traits.metabolism <= clamp.metabolism[1]
+    assert clamp.disease_resistance[0] <= traits.disease_resistance <= clamp.disease_resistance[1]
+    assert clamp.fertility[0] <= traits.fertility <= clamp.fertility[1]
+    assert clamp.sociality[0] <= traits.sociality <= clamp.sociality[1]
+    assert clamp.territoriality[0] <= traits.territoriality <= clamp.territoriality[1]
+    assert clamp.loyalty[0] <= traits.loyalty <= clamp.loyalty[1]
+    assert clamp.founder[0] <= traits.founder <= clamp.founder[1]
+    assert clamp.kin_bias[0] <= traits.kin_bias <= clamp.kin_bias[1]
+
+
 def test_food_regen_noise_is_deterministic_and_bounded():
     environment = EnvironmentConfig(
         food_per_cell=0.0,
