@@ -44,6 +44,9 @@ def test_feedback_config_excludes_removed_pressure_fields():
     assert "group_food_spawn_chance" not in names
     assert "group_food_spawn_amount" not in names
     assert "group_food_neighbor_threshold" not in names
+    assert "post_peak_min_groups" not in names
+    assert "post_peak_max_groups" not in names
+    assert "max_groups" not in names
 
 
 def test_environment_config_excludes_group_food_fields():
@@ -66,6 +69,13 @@ def test_load_config_ignores_removed_group_food_fields():
     env = config.environment
     assert not hasattr(env, "group_food_max_per_cell")
     assert env.food_per_cell == EnvironmentConfig().food_per_cell
+
+
+def test_load_config_ignores_removed_group_cap_fields():
+    config = load_config({"feedback": {"post_peak_min_groups": 3, "post_peak_max_groups": 9, "max_groups": 12}})
+    feedback = config.feedback
+    assert not hasattr(feedback, "max_groups")
+    assert feedback.population_peak_threshold == FeedbackConfig().population_peak_threshold
 
 
 def test_world_does_not_queue_group_food_spawns():
@@ -1742,3 +1752,65 @@ def test_group_split_probability_scales_with_local_size():
     world.step(0)
 
     assert world.agents[0].group_id not in (world._UNGROUPED, 0)
+
+
+def test_post_peak_seeding_assigns_groups_without_caps():
+    config = SimulationConfig(
+        seed=77,
+        time_step=1.0,
+        initial_population=0,
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+        ),
+        feedback=FeedbackConfig(population_peak_threshold=1, post_peak_group_seed_size=2, group_formation_warmup_seconds=0.0),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=500,
+                generation=0,
+                group_id=world._UNGROUPED,  # type: ignore[attr-defined]
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=2.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=501,
+                generation=0,
+                group_id=world._UNGROUPED,  # type: ignore[attr-defined]
+                position=Vector2(1.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=2.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=502,
+                generation=0,
+                group_id=world._UNGROUPED,  # type: ignore[attr-defined]
+                position=Vector2(-1.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=2.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._max_population_seen = 5
+    world._refresh_index_map()
+
+    world._seed_groups_post_peak()
+
+    groups = {agent.group_id for agent in world.agents}
+    assert world._UNGROUPED not in groups
+    assert len(groups) == 1
+    assert list(groups)[0] in world._group_bases

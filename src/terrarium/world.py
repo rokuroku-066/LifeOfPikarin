@@ -470,9 +470,6 @@ class World:
             return
         self._group_bases[group_id] = Vector2(position)
 
-    def _group_limit_reached(self) -> bool:
-        return len(self._group_bases) >= self._config.feedback.max_groups
-
     def _prune_group_bases(self, active_groups: Set[int]) -> None:
         if not self._group_bases:
             return
@@ -578,7 +575,6 @@ class World:
                 else:
                     if (
                         can_form_groups
-                        and not self._group_limit_reached()
                         and self._rng.next_float()
                         < min(1.0, self._config.feedback.group_detach_new_group_chance * max(0.0, traits.founder))
                     ):
@@ -617,8 +613,6 @@ class World:
 
     def _try_form_group(self, agent: Agent) -> None:
         if agent.group_id != self._UNGROUPED:
-            return
-        if self._group_limit_reached():
             return
         if len(self._ungrouped_neighbors) < self._config.feedback.group_formation_neighbor_threshold:
             return
@@ -686,7 +680,6 @@ class World:
             target_group = self._UNGROUPED
             if (
                 can_form_groups
-                and not self._group_limit_reached()
                 and self._rng.next_float()
                 < min(1.0, self._config.feedback.group_split_new_group_chance * max(0.0, traits.founder))
             ):
@@ -1285,19 +1278,13 @@ class World:
             return group_id
         founder = max(0.0, self._clamp_traits(traits).founder)
         if group_id == self._UNGROUPED:
-            if (
-                not self._group_limit_reached()
-                and self._rng.next_float() < min(1.0, self._config.feedback.group_birth_seed_chance * founder)
-            ):
+            if self._rng.next_float() < min(1.0, self._config.feedback.group_birth_seed_chance * founder):
                 new_group = self._next_group_id
                 self._next_group_id += 1
                 self._register_group_base(new_group, position)
                 return new_group
             return self._UNGROUPED
-        if (
-            not self._group_limit_reached()
-            and self._rng.next_float() < min(1.0, self._config.feedback.group_mutation_chance * founder)
-        ):
+        if self._rng.next_float() < min(1.0, self._config.feedback.group_mutation_chance * founder):
             new_group = self._next_group_id
             self._next_group_id += 1
             self._register_group_base(new_group, position)
@@ -1323,21 +1310,16 @@ class World:
     def _seed_groups_post_peak(self) -> None:
         if self._max_population_seen < self._config.feedback.population_peak_threshold:
             return
-        min_groups = self._config.feedback.post_peak_min_groups
-        max_groups = self._config.feedback.post_peak_max_groups
-        if min_groups <= 0:
-            return
         seed_size = max(1, int(self._config.feedback.post_peak_group_seed_size))
         ungrouped_indices = [i for i, agent in enumerate(self._agents) if agent.alive and agent.group_id == self._UNGROUPED]
         current_groups = self._active_group_ids()
-        needed = 0
-        if len(current_groups) < min_groups and ungrouped_indices:
-            needed = min(min_groups - len(current_groups), max(0, max_groups - len(current_groups)))
-            for _ in range(needed):
-                if not ungrouped_indices:
-                    break
-                idx = ungrouped_indices.pop(0)
-                agent = self._agents[idx]
+        if not ungrouped_indices:
+            return
+        if not current_groups:
+            new_group = None
+            while ungrouped_indices and new_group is None:
+                first_idx = ungrouped_indices.pop(0)
+                agent = self._agents[first_idx]
                 if not agent.alive:
                     continue
                 new_group = self._next_group_id
@@ -1352,10 +1334,10 @@ class World:
                         continue
                     self._set_group(recruit, new_group)
                     recruits += 1
-            current_groups = self._active_group_ids()
-        target_groups = list(self._active_group_ids())
-        if not target_groups:
-            return
+            if new_group is None:
+                return
+            current_groups = {new_group}
+        target_groups = list(current_groups)
         assign_index = 0
         for idx in list(ungrouped_indices):
             agent = self._agents[idx]

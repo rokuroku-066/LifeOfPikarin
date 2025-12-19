@@ -104,7 +104,7 @@ python -m terrarium.headless --steps 5000 --seed 42 --log artifacts/metrics_smok
 - 近距離の押し返し: `personal_space_radius`, `personal_space_weight`, `min_separation_distance`, `min_separation_weight`
 - 孤立時の再コロニー化: 近距離の味方が一定秒数見つからない場合は `group_switch_chance` で近傍多数派へ乗り換え、閾値を満たさなければ `group_detach_new_group_chance` で新グループを立ち上げます（外れた場合は未所属に戻る）。
 - グループ形成・分離: `group_formation_warmup_seconds`, `group_formation_chance`, `group_adoption_chance`, `group_split_chance`, `group_split_size_bonus_per_neighbor`, `group_split_chance_max`, `group_split_recruitment_count`, `group_merge_cooldown_seconds`, `group_adoption_guard_min_allies` など
-- グループ上限: `feedback.max_groups`（既定 100）。上限を超える新規グループ生成を抑止し、長時間回帰テストの範囲内に収めます。
+- ポストピークの群れ維持: `population_peak_threshold` 到達後にグループが途切れた場合は `post_peak_group_seed_size` 人で新規グループを seed し、残りの未所属を既存グループへラウンドロビンで再配置します。
 - グループ内の繁殖抑制: `group_reproduction_penalty_per_ally`（同グループ近傍1人あたりの繁殖率低下量）と `group_reproduction_min_factor`（下限）
 - 拠点（group base）への弱い引力: `group_base_attraction_weight`, `group_base_dead_zone`, `group_base_soft_radius`
 - 群れ間距離/結束: `ally_cohesion_weight`, `ally_separation_weight`, `other_group_separation_weight`, `other_group_avoid_radius`, `other_group_avoid_weight`（同グループは密集、異グループは早めに距離を取る調整用）
