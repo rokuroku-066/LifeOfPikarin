@@ -15,6 +15,7 @@ from terrarium.config import (
     SimulationConfig,
     SpeciesConfig,
 )
+from terrarium.environment import FoodCell
 from terrarium.world import DeterministicRng, World
 
 
@@ -477,6 +478,76 @@ def test_lonely_agent_switches_when_neighbor_threshold_met():
 
     assert world.agents[0].group_id == 2
     assert world.agents[0].group_lonely_seconds == 0.0
+
+
+def test_gradients_match_neighbor_cells():
+    config = SimulationConfig(
+        seed=1,
+        time_step=1.0,
+        world_size=3.0,
+        cell_size=1.0,
+        initial_population=0,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+        ),
+        environment=EnvironmentConfig(
+            food_per_cell=20.0,
+            food_regen_per_second=0.0,
+            food_consumption_rate=0.0,
+            food_diffusion_rate=0.0,
+            food_decay_rate=0.0,
+            danger_diffusion_rate=0.0,
+            danger_decay_rate=0.0,
+            pheromone_diffusion_rate=0.0,
+            pheromone_decay_rate=0.0,
+        ),
+    )
+    world = World(config)
+    env = world._environment  # type: ignore[attr-defined]
+
+    env._food_cells = {  # type: ignore[attr-defined]
+        (2, 1): FoodCell(5.0, 20.0, 0.0),
+        (0, 1): FoodCell(1.0, 20.0, 0.0),
+        (1, 2): FoodCell(7.0, 20.0, 0.0),
+        (1, 0): FoodCell(3.0, 20.0, 0.0),
+    }
+    env._danger_field = {  # type: ignore[attr-defined]
+        (2, 1): 9.0,
+        (0, 1): 2.0,
+        (1, 2): 4.0,
+        (1, 0): 1.0,
+    }
+    env._pheromone_field = {  # type: ignore[attr-defined]
+        (2, 1, 4): 6.0,
+        (0, 1, 4): 2.0,
+        (1, 2, 4): 8.0,
+        (1, 0, 4): 3.0,
+    }
+
+    pos = Vector2(1.25, 1.25)
+    assert tuple(world._food_gradient(pos)) == approx((4.0, 4.0))  # right-left, up-down
+    assert tuple(world._danger_gradient(pos)) == approx((7.0, 3.0))
+    assert tuple(world._pheromone_gradient(4, pos)) == approx((4.0, 5.0))
+
+    # Boundary clamping preserves previous behavior (left/down clamp to edge cell)
+    env._food_cells.update(
+        {
+            (1, 0): FoodCell(12.0, 20.0, 0.0),
+            (0, 0): FoodCell(4.0, 20.0, 0.0),
+            (0, 1): FoodCell(12.0, 20.0, 0.0),
+        }
+    )
+    env._danger_field.update({(1, 0): 6.5, (0, 0): 3.0, (0, 1): 6.5})
+    env._pheromone_field.update({(1, 0, 4): 9.0, (0, 0, 4): 3.0, (0, 1, 4): 9.0})
+
+    edge_pos = Vector2(0.05, 0.05)
+    assert tuple(world._food_gradient(edge_pos)) == approx((8.0, 8.0))
+    assert tuple(world._danger_gradient(edge_pos)) == approx((3.5, 3.5))
+    assert tuple(world._pheromone_gradient(4, edge_pos)) == approx((6.0, 6.0))
 
 
 def test_small_group_adoption_relaxes_threshold():
