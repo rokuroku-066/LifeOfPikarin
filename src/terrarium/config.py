@@ -112,15 +112,15 @@ class FeedbackConfig:
 
 @dataclass
 class EvolutionClampConfig:
-    speed: tuple[float, float] = (0.8, 1.25)
-    metabolism: tuple[float, float] = (0.8, 1.25)
-    disease_resistance: tuple[float, float] = (0.6, 1.4)
-    fertility: tuple[float, float] = (0.7, 1.3)
-    sociality: tuple[float, float] = (0.7, 1.3)
-    territoriality: tuple[float, float] = (0.7, 1.3)
-    loyalty: tuple[float, float] = (0.7, 1.3)
-    founder: tuple[float, float] = (0.7, 1.3)
-    kin_bias: tuple[float, float] = (0.7, 1.3)
+    speed: tuple[float, float] = (0.5, 2.0)
+    metabolism: tuple[float, float] = (0.5, 2.0)
+    disease_resistance: tuple[float, float] = (0.5, 2.0)
+    fertility: tuple[float, float] = (0.5, 2.0)
+    sociality: tuple[float, float] = (0.5, 2.0)
+    territoriality: tuple[float, float] = (0.5, 2.0)
+    loyalty: tuple[float, float] = (0.5, 2.0)
+    founder: tuple[float, float] = (0.5, 2.0)
+    kin_bias: tuple[float, float] = (0.5, 2.0)
 
 
 @dataclass
