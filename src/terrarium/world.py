@@ -1118,7 +1118,6 @@ class World:
         self._environment_accumulator += self._config.time_step
         while self._environment_accumulator >= env_dt:
             self._environment.prune_pheromones(active_groups)
-            self._environment.prune_group_food(active_groups)
             self._environment.set_food_regen_multiplier(self._update_food_regen_noise(env_dt))
             self._environment.tick(env_dt)
             self._environment_accumulator -= env_dt
@@ -1193,13 +1192,6 @@ class World:
         max_consumption = self._config.environment.food_consumption_rate * dt
         gained_energy = 0.0
         remaining = max_consumption
-        if remaining > 0.0 and agent.group_id != self._UNGROUPED:
-            group_available = self._environment.sample_group_food(agent.position, agent.group_id)
-            if group_available > 0.0:
-                from_group = min(group_available, remaining)
-                self._environment.consume_group_food(agent.position, agent.group_id, from_group)
-                gained_energy += from_group
-                remaining -= from_group
         if remaining > 0.0:
             available = self._environment.sample_food(agent.position)
             if available > 0:

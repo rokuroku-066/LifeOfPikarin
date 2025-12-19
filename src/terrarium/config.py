@@ -53,9 +53,6 @@ class EnvironmentConfig:
     pheromone_diffusion_rate: float = 0.3
     pheromone_decay_rate: float = 0.05
     pheromone_deposit_on_birth: float = 4.0
-    group_food_max_per_cell: float = 3.0
-    group_food_decay_rate: float = 0.25
-    group_food_diffusion_rate: float = 0.07
 
 
 @dataclass
@@ -189,10 +186,9 @@ def load_config(raw: dict) -> SimulationConfig:
     species = SpeciesConfig(**raw.get("species", {}))
     patches = [ResourcePatchConfig(**patch) for patch in raw.get("resource_patches", raw.get("ResourcePatches", []))]
     env_raw = raw.get("environment", {})
-    env = EnvironmentConfig(
-        resource_patches=patches,
-        **{k: v for k, v in env_raw.items() if k != "resource_patches"},
-    )
+    skipped_env_keys = {"resource_patches", "group_food_max_per_cell", "group_food_decay_rate", "group_food_diffusion_rate"}
+    env_values = {k: v for k, v in env_raw.items() if k not in skipped_env_keys}
+    env = EnvironmentConfig(resource_patches=patches, **env_values)
     feedback = FeedbackConfig(**raw.get("feedback", {}))
     evolution_raw = raw.get("evolution", {})
     clamp = EvolutionClampConfig(

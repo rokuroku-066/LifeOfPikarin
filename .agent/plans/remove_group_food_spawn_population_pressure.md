@@ -11,6 +11,7 @@ Eliminate the free group-food spawning mechanism and the global population press
 - [x] (2025-12-19 05:10Z) Mapped all code/config touchpoints for `group_food_spawn` and `global_population_pressure`.
 - [x] (2025-12-19 05:12Z) Removed the related config fields and world processing while keeping sim/view separation and spatial grid usage intact.
 - [x] (2025-12-19 05:13Z) Updated tests to reflect the removals and ran `pytest tests/python`.
+- [x] (2025-12-19 05:24Z) Stripped remaining group-food field handling from `environment.py`, adjusted docs/tests, and re-ran `pytest tests/python`.
 
 ## Surprises & Discoveries
 
@@ -24,7 +25,7 @@ None yet.
 
 ## Outcomes & Retrospective
 
-Removed the free group-food spawn path and the global population pressure hazard while keeping other resource mechanics intact. Config surface now excludes the deprecated fields, and tests verify their absence. Validation via `pytest tests/python` passed after the edits.
+Removed the free group-food spawn path and the global population pressure hazard while keeping other resource mechanics intact. Config surface now excludes the deprecated fields, the environment grid no longer tracks dormant group-food fields, and tests verify their absence. Validation via `pytest tests/python` passed after the edits.
 
 ## Context and Orientation
 

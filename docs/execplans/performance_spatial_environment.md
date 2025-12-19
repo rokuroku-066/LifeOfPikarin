@@ -33,7 +33,7 @@ Use a list with checkboxes to summarize granular steps. Every stopping point mus
 ## Context and Orientation
 
 - Spatial grid neighbor hashing: `src/terrarium/spatial_grid.py` (`insert`, `clear`, `collect_neighbors_precomputed`).
-- Environment diffusion and accumulation: `src/terrarium/environment.py` (`_diffuse_group_food`, `_diffuse_field`, `_add_key`).
+- Environment diffusion and accumulation: `src/terrarium/environment.py` (`_diffuse_field`, `_add_key`).
 - World neighbor handling and gradients: `src/terrarium/world.py` (`_compute_desired_velocity`, `_clamp_traits`, neighbor loops).
 - Design constraints: Sim and View stay separated; no O(N²) neighbor scans (all neighbor work uses spatial grid); determinism and seed reproducibility; negative feedback loops remain intact; Phase 1 cube rendering only.
 
@@ -47,7 +47,7 @@ Describe, in prose, the sequence of edits and additions. For each edit, name the
 2) Environment diffusion allocation cuts (`src/terrarium/environment.py`):
    - Hoist common neighbor offsets to a shared constant/tuple to avoid recreating per call.
    - Replace `_add_key` list conversion with tuple math and clamp without list allocations.
-   - Remove redundant assignments and list creations in `_diffuse_group_food` and `_diffuse_field` while preserving clamping.
+   - Remove redundant assignments and list creations in `_diffuse_field` while preserving clamping.
 3) World gradient and neighbor loop optimizations (`src/terrarium/world.py`):
    - Avoid recomputing danger gradients twice in `_compute_desired_velocity`.
    - Ensure trait clamping is applied only once per agent per tick (reuse clamped traits for downstream calculations).
