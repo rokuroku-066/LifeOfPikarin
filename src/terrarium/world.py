@@ -114,6 +114,7 @@ class World:
         self._pending_group_food: List[tuple[Vector2, int, float]] = []
         self._ungrouped_neighbors: List[Agent] = []
         self._group_counts_scratch: Dict[int, int] = {}
+        self._group_lineage_counts: Dict[int, int] = {}
         self._group_sizes: Dict[int, int] = {}
         self._group_bases: Dict[int, Vector2] = {}
         self._next_lineage_id = 0
@@ -150,6 +151,7 @@ class World:
         self._pending_pheromone.clear()
         self._pending_group_food.clear()
         self._group_sizes.clear()
+        self._group_lineage_counts.clear()
         self._group_bases.clear()
         self._rng.reset()
         self._climate_rng.reset()
@@ -245,6 +247,7 @@ class World:
                 speed_limit,
                 return_sensed=True,
                 neighbor_dist_sq=neighbor_dist_sq,
+                traits=traits,
             )
             accel = desired - agent.velocity
             accel = _clamp_length(accel, species.max_acceleration)
@@ -372,6 +375,11 @@ class World:
         traits.metabolism = _clamp_value(traits.metabolism, clamp.metabolism[0], clamp.metabolism[1])
         traits.disease_resistance = _clamp_value(traits.disease_resistance, clamp.disease_resistance[0], clamp.disease_resistance[1])
         traits.fertility = _clamp_value(traits.fertility, clamp.fertility[0], clamp.fertility[1])
+        traits.sociality = _clamp_value(traits.sociality, clamp.sociality[0], clamp.sociality[1])
+        traits.territoriality = _clamp_value(traits.territoriality, clamp.territoriality[0], clamp.territoriality[1])
+        traits.loyalty = _clamp_value(traits.loyalty, clamp.loyalty[0], clamp.loyalty[1])
+        traits.founder = _clamp_value(traits.founder, clamp.founder[0], clamp.founder[1])
+        traits.kin_bias = _clamp_value(traits.kin_bias, clamp.kin_bias[0], clamp.kin_bias[1])
         return traits
 
     def _copy_traits(self, traits: AgentTraits) -> AgentTraits:
@@ -380,6 +388,11 @@ class World:
             metabolism=traits.metabolism,
             disease_resistance=traits.disease_resistance,
             fertility=traits.fertility,
+            sociality=traits.sociality,
+            territoriality=traits.territoriality,
+            loyalty=traits.loyalty,
+            founder=traits.founder,
+            kin_bias=traits.kin_bias,
         )
 
     def _mutate_traits(self, parent_traits: AgentTraits) -> AgentTraits:
@@ -392,6 +405,11 @@ class World:
         mutated.metabolism += self._rng.next_range(-strength, strength) * evolution.metabolism_mutation_weight
         mutated.disease_resistance += self._rng.next_range(-strength, strength) * evolution.disease_resistance_mutation_weight
         mutated.fertility += self._rng.next_range(-strength, strength) * evolution.fertility_mutation_weight
+        mutated.sociality += self._rng.next_range(-strength, strength) * evolution.sociality_mutation_weight
+        mutated.territoriality += self._rng.next_range(-strength, strength) * evolution.territoriality_mutation_weight
+        mutated.loyalty += self._rng.next_range(-strength, strength) * evolution.loyalty_mutation_weight
+        mutated.founder += self._rng.next_range(-strength, strength) * evolution.founder_mutation_weight
+        mutated.kin_bias += self._rng.next_range(-strength, strength) * evolution.kin_bias_mutation_weight
         return self._clamp_traits(mutated)
 
     def _trait_reproduction_factor(self, traits: AgentTraits) -> float:
@@ -500,9 +518,13 @@ class World:
         can_form_groups: bool,
     ) -> None:
         original_group = agent.group_id
+        traits = self._clamp_traits(agent.traits)
+        loyalty = max(0.1, traits.loyalty)
+        kin_bias = traits.kin_bias
         prev_lonely = agent.group_lonely_seconds
         self._decay_group_cooldown(agent)
         self._group_counts_scratch.clear()
+        self._group_lineage_counts.clear()
         self._ungrouped_neighbors.clear()
         same_group_neighbors = 0
         same_group_close_neighbors = 0
@@ -518,20 +540,28 @@ class World:
                     same_group_close_neighbors += 1
             if other.group_id >= 0:
                 self._group_counts_scratch[other.group_id] = self._group_counts_scratch.get(other.group_id, 0) + 1
+                if other.lineage_id == agent.lineage_id:
+                    self._group_lineage_counts[other.group_id] = self._group_lineage_counts.get(other.group_id, 0) + 1
 
         majority_group = self._UNGROUPED
         majority_count = 0
         switch_group = self._UNGROUPED
         switch_count = 0
+        majority_score = -float("inf")
+        switch_score = -float("inf")
         for gid, count in self._group_counts_scratch.items():
-            if count > majority_count:
+            kin_count = self._group_lineage_counts.get(gid, 0)
+            score = count + (kin_bias - 1.0) * kin_count
+            if score > majority_score or (math.isclose(score, majority_score) and count > majority_count):
                 majority_group = gid
                 majority_count = count
+                majority_score = score
             if gid == agent.group_id:
                 continue
-            if count > switch_count:
+            if score > switch_score or (math.isclose(score, switch_score) and count > switch_count):
                 switch_group = gid
                 switch_count = count
+                switch_score = score
 
         if agent.group_id == self._UNGROUPED:
             agent.group_lonely_seconds = 0.0
@@ -540,19 +570,22 @@ class World:
                 agent.group_lonely_seconds = 0.0
             else:
                 agent.group_lonely_seconds = prev_lonely + self._config.time_step
-            if agent.group_lonely_seconds >= self._config.feedback.group_detach_after_seconds:
+            effective_detach_seconds = self._config.feedback.group_detach_after_seconds * loyalty
+            if agent.group_lonely_seconds >= effective_detach_seconds:
                 switch_threshold = max(1, self._config.feedback.group_adoption_neighbor_threshold)
+                switch_chance = min(1.0, self._config.feedback.group_switch_chance / max(0.1, loyalty))
                 if (
                     switch_group != self._UNGROUPED
                     and switch_count >= switch_threshold
-                    and self._rng.next_float() < self._config.feedback.group_switch_chance
+                    and self._rng.next_float() < switch_chance
                 ):
                     self._set_group(agent, switch_group)
                 else:
                     if (
                         can_form_groups
                         and not self._group_limit_reached()
-                        and self._rng.next_float() < self._config.feedback.group_detach_new_group_chance
+                        and self._rng.next_float()
+                        < min(1.0, self._config.feedback.group_detach_new_group_chance * max(0.0, traits.founder))
                     ):
                         new_group = self._next_group_id
                         self._next_group_id += 1
@@ -584,6 +617,7 @@ class World:
         if agent.group_id == original_group:
             self._try_split_group(agent, same_group_neighbors, neighbors, neighbor_offsets, can_form_groups)
         self._group_counts_scratch.clear()
+        self._group_lineage_counts.clear()
         self._ungrouped_neighbors.clear()
 
     def _try_form_group(self, agent: Agent) -> None:
@@ -624,7 +658,13 @@ class World:
         base_chance = self._config.feedback.group_adoption_chance
         small_bonus = self._config.feedback.group_adoption_small_group_bonus
         size_for_bonus = max(1, target_size)
-        adoption_chance = min(1.0, base_chance * (1.0 + small_bonus / size_for_bonus))
+        traits = self._clamp_traits(agent.traits)
+        sociality = max(0.0, traits.sociality)
+        loyalty = max(0.1, traits.loyalty)
+        adoption_chance = base_chance * (1.0 + small_bonus / size_for_bonus) * sociality
+        if agent.group_id != self._UNGROUPED:
+            adoption_chance *= 1.0 / loyalty
+        adoption_chance = min(1.0, max(0.0, adoption_chance))
         if self._rng.next_float() < adoption_chance:
             self._set_group(agent, majority_group)
 
@@ -633,6 +673,7 @@ class World:
     ) -> None:
         if agent.group_id == self._UNGROUPED:
             return
+        traits = self._clamp_traits(agent.traits)
         if same_group_neighbors < self._config.feedback.group_split_neighbor_threshold:
             return
         effective_stress = agent.stress + same_group_neighbors * self._config.feedback.group_split_size_stress_weight
@@ -651,7 +692,8 @@ class World:
             if (
                 can_form_groups
                 and not self._group_limit_reached()
-                and self._rng.next_float() < self._config.feedback.group_split_new_group_chance
+                and self._rng.next_float()
+                < min(1.0, self._config.feedback.group_split_new_group_chance * max(0.0, traits.founder))
             ):
                 target_group = self._next_group_id
                 self._next_group_id += 1
@@ -682,13 +724,17 @@ class World:
         base_speed: float,
         return_sensed: bool = False,
         neighbor_dist_sq: List[float] | None = None,
+        traits: AgentTraits | None = None,
     ) -> tuple[Vector2, bool] | Vector2:
         desired = ZERO
         flee_vector = ZERO
         sensed_danger = False
+        traits = self._clamp_traits(agent.traits) if traits is None else traits
         species = self._config.species
         feedback = self._config.feedback
         environment = self._config.environment
+        sociality = max(0.0, traits.sociality)
+        territoriality = max(0.0, traits.territoriality)
         dist_sq_list = neighbor_dist_sq
         if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
             dist_sq_list = self._neighbor_dist_sq
@@ -751,12 +797,12 @@ class World:
             desired = desired + pheromone_bias * (base_speed * 0.15)
 
         desired = desired + personal_space_bias * (base_speed * feedback.personal_space_weight)
-        desired = desired + intergroup_bias * (base_speed * feedback.other_group_avoid_weight)
+        desired = desired + intergroup_bias * (base_speed * feedback.other_group_avoid_weight * territoriality)
         desired = desired + group_seek_bias * (base_speed * feedback.group_seek_weight)
         desired = desired + self._separation(agent, neighbors, neighbor_offsets, dist_sq_list) * (base_speed * 1.4)
-        desired = desired + self._alignment(agent, neighbors) * (base_speed * 0.3)
+        desired = desired + self._alignment(agent, neighbors) * (base_speed * 0.3 * sociality)
         desired = desired + group_cohesion_bias * (
-            base_speed * feedback.group_cohesion_weight * feedback.ally_cohesion_weight
+            base_speed * feedback.group_cohesion_weight * feedback.ally_cohesion_weight * sociality
         )
         desired = desired + base_bias * (base_speed * feedback.group_base_attraction_weight)
         boundary_bias, boundary_proximity = self._boundary_avoidance(agent.position)
@@ -1206,7 +1252,7 @@ class World:
             if self._rng.next_float() < reproduction_chance:
                 child_energy = agent.energy * 0.5
                 agent.energy -= child_energy + self._config.species.birth_energy_cost
-                child_group = self._mutate_group(agent.group_id, can_create_groups, agent.position)
+                child_group = self._mutate_group(agent.group_id, can_create_groups, agent.position, traits)
                 if agent.group_id == self._UNGROUPED and child_group != self._UNGROUPED:
                     self._set_group(agent, child_group)
                 child_cooldown = (
@@ -1268,13 +1314,14 @@ class World:
             self._pending_food.append((agent.position, self._config.environment.food_from_death))
         return births_added
 
-    def _mutate_group(self, group_id: int, can_create_groups: bool, position: Vector2) -> int:
+    def _mutate_group(self, group_id: int, can_create_groups: bool, position: Vector2, traits: AgentTraits) -> int:
         if not can_create_groups:
             return group_id
+        founder = max(0.0, self._clamp_traits(traits).founder)
         if group_id == self._UNGROUPED:
             if (
                 not self._group_limit_reached()
-                and self._rng.next_float() < self._config.feedback.group_birth_seed_chance
+                and self._rng.next_float() < min(1.0, self._config.feedback.group_birth_seed_chance * founder)
             ):
                 new_group = self._next_group_id
                 self._next_group_id += 1
@@ -1283,7 +1330,7 @@ class World:
             return self._UNGROUPED
         if (
             not self._group_limit_reached()
-            and self._rng.next_float() < self._config.feedback.group_mutation_chance
+            and self._rng.next_float() < min(1.0, self._config.feedback.group_mutation_chance * founder)
         ):
             new_group = self._next_group_id
             self._next_group_id += 1

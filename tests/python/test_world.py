@@ -3,7 +3,7 @@ from __future__ import annotations
 from pygame.math import Vector2
 from pytest import approx
 
-from terrarium.agent import Agent, AgentState
+from terrarium.agent import Agent, AgentState, AgentTraits
 from terrarium.config import (
     EnvironmentConfig,
     EvolutionClampConfig,
@@ -12,7 +12,7 @@ from terrarium.config import (
     SimulationConfig,
     SpeciesConfig,
 )
-from terrarium.world import World
+from terrarium.world import DeterministicRng, World
 
 
 def run_steps(config: SimulationConfig, steps: int):
@@ -85,6 +85,11 @@ def test_traits_respect_clamp_after_births():
         assert clamp.metabolism[0] <= agent.traits.metabolism <= clamp.metabolism[1]
         assert clamp.disease_resistance[0] <= agent.traits.disease_resistance <= clamp.disease_resistance[1]
         assert clamp.fertility[0] <= agent.traits.fertility <= clamp.fertility[1]
+        assert clamp.sociality[0] <= agent.traits.sociality <= clamp.sociality[1]
+        assert clamp.territoriality[0] <= agent.traits.territoriality <= clamp.territoriality[1]
+        assert clamp.loyalty[0] <= agent.traits.loyalty <= clamp.loyalty[1]
+        assert clamp.founder[0] <= agent.traits.founder <= clamp.founder[1]
+        assert clamp.kin_bias[0] <= agent.traits.kin_bias <= clamp.kin_bias[1]
 
 
 def test_food_regen_noise_is_deterministic_and_bounded():
@@ -369,7 +374,7 @@ def test_lonely_agent_switches_when_neighbor_threshold_met():
             group_cohesion_weight=0.0,
             group_formation_warmup_seconds=0.0,
             group_adoption_neighbor_threshold=1,
-            group_adoption_chance=1.0,
+            group_adoption_chance=0.3,
         ),
     )
     world = World(config)
@@ -473,6 +478,244 @@ def test_small_group_adoption_relaxes_threshold():
 
     assert world.agents[0].group_id == 2
     assert world.agents[0].group_lonely_seconds == 0.0
+
+
+def test_loyalty_suppresses_switching_to_majority():
+    config = SimulationConfig(
+        seed=0,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(
+            base_speed=0.0, max_acceleration=0.0, metabolism_per_second=0.0, vision_radius=3.0, wander_jitter=0.0
+        ),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=1.0,
+            group_detach_close_neighbor_threshold=1,
+            group_detach_after_seconds=10.0,
+            group_switch_chance=1.0,
+            group_detach_new_group_chance=0.0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+            group_adoption_chance=0.3,
+            group_adoption_small_group_bonus=0.0,
+            group_adoption_guard_min_allies=1,
+            reproduction_base_chance=0.0,
+            base_death_probability_per_second=0.0,
+            age_death_probability_per_second=0.0,
+            density_death_probability_per_neighbor_per_second=0.0,
+            group_split_chance=0.0,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=300,
+                generation=0,
+                group_id=1,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+                traits=AgentTraits(sociality=1.3, loyalty=1.0),
+            ),
+            Agent(
+                id=301,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.5, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=302,
+                generation=0,
+                group_id=2,
+                position=Vector2(1.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    for agent in world.agents:
+        agent.wander_dir = Vector2(1.0, 0.0)
+        agent.wander_time = 1.0
+    world._next_id = 303
+    world._next_group_id = 3
+    world._refresh_index_map()
+    world._rng = DeterministicRng(config.seed)
+    world._rng.next_float = lambda: 0.0  # type: ignore[assignment]
+
+    world.step(0)
+    assert world.agents[0].group_id == 2
+
+    loyal_world = World(config)
+    loyal_world.agents.clear()
+    loyal_world.agents.extend(
+        [
+            Agent(
+                id=400,
+                generation=0,
+                group_id=1,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+                traits=AgentTraits(sociality=1.3, loyalty=5.0),
+            ),
+            Agent(
+                id=401,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.5, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=402,
+                generation=0,
+                group_id=2,
+                position=Vector2(1.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    for agent in loyal_world.agents:
+        agent.wander_dir = Vector2(1.0, 0.0)
+        agent.wander_time = 1.0
+    loyal_world._next_id = 403
+    loyal_world._next_group_id = 3
+    loyal_world._refresh_index_map()
+    loyal_world._rng = DeterministicRng(config.seed)
+    loyal_world._rng.next_float = lambda: 0.5  # type: ignore[assignment]
+
+    loyal_world.step(0)
+    assert loyal_world.agents[0].group_id == 1
+
+
+def test_kin_bias_prefers_lineage_majority():
+    config = SimulationConfig(
+        seed=44,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(
+            base_speed=0.0, max_acceleration=0.0, metabolism_per_second=0.0, vision_radius=3.0, wander_jitter=0.0
+        ),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=1.0,
+            group_detach_close_neighbor_threshold=1,
+            group_detach_after_seconds=10.0,
+            group_switch_chance=0.0,
+            group_detach_new_group_chance=0.0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+            group_adoption_chance=1.0,
+            group_adoption_small_group_bonus=0.0,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.extend(
+        [
+            Agent(
+                id=100,
+                generation=0,
+                group_id=-1,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+                lineage_id=7,
+                traits=AgentTraits(kin_bias=1.3),
+            ),
+            Agent(
+                id=101,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.5, 0.0),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+                lineage_id=7,
+            ),
+            Agent(
+                id=102,
+                generation=0,
+                group_id=3,
+                position=Vector2(0.5, 0.5),
+                velocity=Vector2(),
+                energy=10.0,
+                age=10.0,
+                state=AgentState.WANDER,
+                lineage_id=8,
+            ),
+        ]
+    )
+    world._next_id = 103
+    world._next_group_id = 4
+    world._refresh_index_map()
+
+    world.step(0)
+
+    assert world.agents[0].group_id == 2
+
+
+def test_loyalty_extends_detach_timer():
+    config = SimulationConfig(
+        seed=55,
+        time_step=1.0,
+        initial_population=0,
+        species=SpeciesConfig(base_speed=0.0, max_acceleration=0.0, metabolism_per_second=0.0, vision_radius=3.0),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=1.0,
+            group_detach_close_neighbor_threshold=1,
+            group_detach_after_seconds=1.0,
+            group_switch_chance=0.0,
+            group_detach_new_group_chance=0.0,
+            group_cohesion_weight=0.0,
+            group_formation_warmup_seconds=0.0,
+            group_adoption_neighbor_threshold=1,
+        ),
+    )
+    world = World(config)
+    world.agents.clear()
+    world.agents.append(
+        Agent(
+            id=200,
+            generation=0,
+            group_id=0,
+            position=Vector2(0.0, 0.0),
+            velocity=Vector2(),
+            energy=10.0,
+            age=10.0,
+            state=AgentState.WANDER,
+            traits=AgentTraits(loyalty=1.3),
+        )
+    )
+    world._next_id = 201
+    world._next_group_id = 1
+    world._refresh_index_map()
+
+    world.step(0)
+
+    assert world.agents[0].group_id == 0
+    assert world.agents[0].group_lonely_seconds == approx(1.0)
 
 
 def test_close_allies_reset_lonely_timer():
