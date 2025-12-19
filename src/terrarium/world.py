@@ -125,6 +125,8 @@ class World:
         self._food_regen_noise_multiplier = 1.0
         self._food_regen_noise_target = 1.0
         self._food_regen_noise_time_to_next_sample = 0.0
+        self._cached_population_stats: tuple[int, float, float, int, int] = (0, 0.0, 0.0, 0, 0)
+        self._population_stats_dirty = True
         self._refresh_vision_cache()
         self._bootstrap_population()
 
@@ -163,6 +165,8 @@ class World:
         self._food_regen_noise_multiplier = 1.0
         self._food_regen_noise_target = 1.0
         self._food_regen_noise_time_to_next_sample = 0.0
+        self._cached_population_stats = (0, 0.0, 0.0, 0, 0)
+        self._population_stats_dirty = True
         self._refresh_vision_cache()
         self._bootstrap_population()
 
@@ -197,6 +201,12 @@ class World:
 
         vision_cell_offsets = self._vision_cell_offsets
         vision_radius_sq = self._vision_radius_sq
+        population = 0
+        energy_sum = 0.0
+        age_sum = 0.0
+        ungrouped = 0
+        group_ids = self._group_scratch
+        group_ids.clear()
 
         for agent in self._agents:
             if not agent.alive:
@@ -266,7 +276,24 @@ class World:
             )
             if agent.state == AgentState.FLEE or sensed_danger:
                 self._pending_danger.append((agent.position, self._config.environment.danger_pulse_on_flee))
+            if agent.alive:
+                population += 1
+                energy_sum += agent.energy
+                age_sum += agent.age
+                if agent.group_id == self._UNGROUPED:
+                    ungrouped += 1
+                else:
+                    group_ids.add(agent.group_id)
 
+        if self._birth_queue:
+            for born in self._birth_queue:
+                population += 1
+                energy_sum += born.energy
+                age_sum += born.age
+                if born.group_id == self._UNGROUPED:
+                    ungrouped += 1
+                else:
+                    group_ids.add(born.group_id)
         self._apply_births()
         deaths += self._remove_dead()
         active_groups = self._active_group_ids()
@@ -275,7 +302,8 @@ class World:
         self._tick_environment(active_groups)
 
         elapsed_ms = (perf_counter() - start) * 1000.0
-        metrics = self._create_metrics(tick, births, deaths, neighbor_checks, elapsed_ms)
+        stats = self._update_cached_population_stats(population, energy_sum, age_sum, group_ids, ungrouped)
+        metrics = self._create_metrics(tick, births, deaths, neighbor_checks, elapsed_ms, stats)
         self._metrics.append(metrics)
         return metrics
 
@@ -1351,23 +1379,6 @@ class World:
 
         return Vector2(x, y), Vector2(vx, vy)
 
-    def _population_stats(self) -> tuple[int, float, float, int, int]:
-        population = len(self._agents)
-        energy_sum = sum(agent.energy for agent in self._agents)
-        age_sum = sum(agent.age for agent in self._agents)
-        self._group_scratch.clear()
-        ungrouped = 0
-        for agent in self._agents:
-            if agent.group_id != self._UNGROUPED:
-                self._group_scratch.add(agent.group_id)
-            else:
-                ungrouped += 1
-        avg_energy = 0.0 if population == 0 else energy_sum / population
-        avg_age = 0.0 if population == 0 else age_sum / population
-        groups = len(self._group_scratch)
-        self._group_scratch.clear()
-        return population, avg_energy, avg_age, groups, ungrouped
-
     def _active_group_ids(self) -> Set[int]:
         groups: Set[int] = set()
         for agent in self._agents:
@@ -1378,8 +1389,16 @@ class World:
                 groups.add(agent.group_id)
         return groups
 
-    def _create_metrics(self, tick: int, births: int, deaths: int, neighbor_checks: int, duration_ms: float) -> TickMetrics:
-        population, avg_energy, avg_age, groups, ungrouped = self._population_stats()
+    def _create_metrics(
+        self,
+        tick: int,
+        births: int,
+        deaths: int,
+        neighbor_checks: int,
+        duration_ms: float,
+        stats: tuple[int, float, float, int, int],
+    ) -> TickMetrics:
+        population, avg_energy, avg_age, groups, ungrouped = stats
         return TickMetrics(
             tick=tick,
             population=population,
@@ -1394,7 +1413,7 @@ class World:
         )
 
     def _snapshot_metrics_from_state(self, tick: int) -> TickMetrics:
-        population, avg_energy, avg_age, groups, ungrouped = self._population_stats()
+        population, avg_energy, avg_age, groups, ungrouped = self._latest_population_stats()
         return TickMetrics(
             tick=tick,
             population=population,
@@ -1407,3 +1426,38 @@ class World:
             ungrouped=ungrouped,
             tick_duration_ms=0.0,
         )
+
+    def _latest_population_stats(self) -> tuple[int, float, float, int, int]:
+        if self._population_stats_dirty:
+            return self._recalculate_population_stats()
+        return self._cached_population_stats
+
+    def _recalculate_population_stats(self) -> tuple[int, float, float, int, int]:
+        population = 0
+        energy_sum = 0.0
+        age_sum = 0.0
+        ungrouped = 0
+        group_ids = self._group_scratch
+        group_ids.clear()
+        for agent in self._agents:
+            if not agent.alive:
+                continue
+            population += 1
+            energy_sum += agent.energy
+            age_sum += agent.age
+            if agent.group_id == self._UNGROUPED:
+                ungrouped += 1
+            else:
+                group_ids.add(agent.group_id)
+        return self._update_cached_population_stats(population, energy_sum, age_sum, group_ids, ungrouped)
+
+    def _update_cached_population_stats(
+        self, population: int, energy_sum: float, age_sum: float, group_ids: Set[int], ungrouped: int
+    ) -> tuple[int, float, float, int, int]:
+        avg_energy = 0.0 if population == 0 else energy_sum / population
+        avg_age = 0.0 if population == 0 else age_sum / population
+        groups = len(group_ids)
+        group_ids.clear()
+        self._cached_population_stats = (population, avg_energy, avg_age, groups, ungrouped)
+        self._population_stats_dirty = False
+        return self._cached_population_stats
