@@ -14,7 +14,7 @@ class AgentState(str, Enum):
     WANDER = "Wander"
 
 
-@dataclass
+@dataclass(slots=True)
 class AgentTraits:
     speed: float = 1.0
     metabolism: float = 1.0
@@ -27,7 +27,7 @@ class AgentTraits:
     kin_bias: float = 1.0
 
 
-@dataclass
+@dataclass(slots=True)
 class Agent:
     id: int
     generation: int
