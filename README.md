@@ -13,13 +13,13 @@
 - 表示は Phase 1 では **キューブ＋GPU インスタンシング**
 - Codex 用の `AGENTS.md` / `.agent/PLANS.md` と連携
 
-詳細なシステム設計は [`docs/DESIGN.md`](docs/DESIGN.md) を参照してください。
+詳細なシステム設計は [`docs/DESIGN.md`](docs/DESIGN.md) を参照してください。社会・系譜トレイト（`sociality` / `territoriality` / `loyalty` / `founder` / `kin_bias`）とグループ振る舞いの紐付けは `.agent/plans/social_traits_factions.md` の計画と一致するよう更新済みです。
 
 ---
 
 ## プロジェクトの現状
 
-- **Simulation (Python)**: `src/terrarium/` に固定Δt・SpatialGrid・フィードバック付きの Python 実装を収録。FastAPI ベースの Web ビューアで Unity なしにブラウザから観察可能。
+- **Simulation (Python)**: `src/terrarium/` に固定Δt・SpatialGrid・フィードバック付きの Python 実装を収録。FastAPI ベースの Web ビューアで Unity なしにブラウザから観察可能。`sociality` / `territoriality` / `loyalty` / `founder` / `kin_bias` などの社会トレイトが採用・離脱・分裂・群間回避・系譜バイアスに反映される。
 - **Visualization**: ブラウザ用 Three.js レンダラ（GPU インスタンシング/Points）を `src/terrarium/static/` に同梱。サーバー側でシミュレーションを進め、クライアントはスナップショットを受信して描画するだけです（Sim→View の一方向）。
 - **Headless 実行**: `python -m terrarium.headless` でメトリクスを CSV 出力し、長時間の安定性を確認できます。
 - **テスト**: `tests/python/` に決定性・上限チェック・SpatialGrid のユニットテストがあります。
