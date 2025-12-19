@@ -26,8 +26,8 @@ Eliminate the explicit `max_groups`, `post_peak_min_groups`, and `post_peak_max_
 
 ## Outcomes & Retrospective
 
-- Group cap knobs were removed from `FeedbackConfig`; world logic now seeds post-peak groups based on observed state rather than configured limits and redistributes ungrouped agents accordingly.
-- Documentation and tests were updated; full `pytest tests/python` run now passes with 42 tests.
+- Group cap knobs were removed from `FeedbackConfig`, and the post-peak seeding helper was eliminated to simplify group handling.
+- Documentation and tests were updated; full `pytest tests/python` run now passes.
 
 ## Context and Orientation
 
@@ -54,10 +54,10 @@ Describe, in prose, the sequence of edits and additions.
 
 ## Concrete Steps
 
-- Edit `src/terrarium/config.py` to drop the target fields and remove any loader expectations.
-- Update `src/terrarium/world.py` group limit and post-peak seeding code to no longer depend on the removed fields.
-- Revise `docs/DESIGN.md` and `README.md` to remove references to the deleted knobs.
-- Run: `pytest tests/python`
+    - Edit `src/terrarium/config.py` to drop the target fields and remove any loader expectations.
+    - Update `src/terrarium/world.py` group logic to operate without explicit caps or post-peak seeding helpers.
+    - Revise `docs/DESIGN.md` and `README.md` to remove references to the deleted knobs.
+    - Run: `pytest tests/python`
 
 ## Validation and Acceptance
 

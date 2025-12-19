@@ -269,7 +269,6 @@ class World:
 
         self._apply_births()
         deaths += self._remove_dead()
-        self._seed_groups_post_peak()
         active_groups = self._active_group_ids()
         self._prune_group_bases(active_groups)
         self._apply_field_events()
@@ -1306,46 +1305,6 @@ class World:
         for agent in self._birth_queue:
             self._agents.append(agent)
         self._birth_queue.clear()
-
-    def _seed_groups_post_peak(self) -> None:
-        if self._max_population_seen < self._config.feedback.population_peak_threshold:
-            return
-        seed_size = max(1, int(self._config.feedback.post_peak_group_seed_size))
-        ungrouped_indices = [i for i, agent in enumerate(self._agents) if agent.alive and agent.group_id == self._UNGROUPED]
-        current_groups = self._active_group_ids()
-        if not ungrouped_indices:
-            return
-        if not current_groups:
-            new_group = None
-            while ungrouped_indices and new_group is None:
-                first_idx = ungrouped_indices.pop(0)
-                agent = self._agents[first_idx]
-                if not agent.alive:
-                    continue
-                new_group = self._next_group_id
-                self._next_group_id += 1
-                self._register_group_base(new_group, agent.position)
-                self._set_group(agent, new_group)
-                recruits = 0
-                while recruits < seed_size - 1 and ungrouped_indices:
-                    r_idx = ungrouped_indices.pop(0)
-                    recruit = self._agents[r_idx]
-                    if not recruit.alive:
-                        continue
-                    self._set_group(recruit, new_group)
-                    recruits += 1
-            if new_group is None:
-                return
-            current_groups = {new_group}
-        target_groups = list(current_groups)
-        assign_index = 0
-        for idx in list(ungrouped_indices):
-            agent = self._agents[idx]
-            if not agent.alive:
-                continue
-            gid = target_groups[assign_index % len(target_groups)]
-            self._set_group(agent, gid)
-            assign_index += 1
 
     def _refresh_index_map(self) -> None:
         self._id_to_index = {agent.id: i for i, agent in enumerate(self._agents)}
