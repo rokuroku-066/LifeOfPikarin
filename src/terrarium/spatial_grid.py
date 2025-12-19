@@ -122,6 +122,7 @@ class SpatialGrid:
         out_agents: List["Agent"],
         out_offsets: List[Vector2],
         exclude_id: int | None = None,
+        out_dist_sq: List[float] | None = None,
     ) -> None:
         """
         Collect neighbors using precomputed cell offsets and radius squared values to reduce per-call overhead.
@@ -129,12 +130,16 @@ class SpatialGrid:
 
         out_agents.clear()
         offset_count = 0
+        if out_dist_sq is not None:
+            out_dist_sq.clear()
         base_key = self._cell_key(position)
         pos_x = position.x
         pos_y = position.y
         cells = self._cells
         append_agent = out_agents.append
         append_offset = out_offsets.append
+        dist_buffer = out_dist_sq
+        append_dist = dist_buffer.append if dist_buffer is not None else None
 
         for dx, dy in cell_offsets:
             bucket = cells.get((base_key[0] + dx, base_key[1] + dy))
@@ -148,15 +153,23 @@ class SpatialGrid:
                     continue
                 offset_x = entry.position.x - pos_x
                 offset_y = entry.position.y - pos_y
-                if offset_x * offset_x + offset_y * offset_y <= radius_sq:
+                dist_sq = offset_x * offset_x + offset_y * offset_y
+                if dist_sq <= radius_sq:
                     append_agent(agent)
                     if offset_count < len(out_offsets):
                         out_offsets[offset_count].update(offset_x, offset_y)
                     else:
                         append_offset(Vector2(offset_x, offset_y))
+                    if dist_buffer is not None:
+                        if offset_count < len(dist_buffer):
+                            dist_buffer[offset_count] = dist_sq
+                        else:
+                            append_dist(dist_sq)
                     offset_count += 1
 
         del out_offsets[offset_count:]
+        if dist_buffer is not None:
+            del dist_buffer[offset_count:]
 
     def _cell_key(self, position: Vector2) -> Tuple[int, int]:
         return (int(position.x // self._cell_size), int(position.y // self._cell_size))

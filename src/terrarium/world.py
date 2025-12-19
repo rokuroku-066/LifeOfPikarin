@@ -215,13 +215,11 @@ class World:
                 self._neighbor_agents,
                 self._neighbor_offsets,
                 exclude_id=agent.id,
+                out_dist_sq=self._neighbor_dist_sq,
             )
             neighbor_checks += len(self._neighbor_agents)
             neighbor_dist_sq = self._neighbor_dist_sq
-            neighbor_dist_sq.clear()
-            for other, offset in zip(self._neighbor_agents, self._neighbor_offsets):
-                dist_sq = offset.x * offset.x + offset.y * offset.y
-                neighbor_dist_sq.append(dist_sq)
+            for other, dist_sq in zip(self._neighbor_agents, neighbor_dist_sq):
                 if original_group != self._UNGROUPED and other.group_id == original_group:
                     same_group_neighbors += 1
                     if cluster_radius_sq > 1e-9 and dist_sq <= cluster_radius_sq:
