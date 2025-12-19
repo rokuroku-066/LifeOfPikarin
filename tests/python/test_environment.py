@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pygame.math import Vector2
 
-from terrarium.config import EnvironmentConfig
+from terrarium.config import EnvironmentConfig, ResourcePatchConfig
 from terrarium.environment import EnvironmentGrid
 
 
@@ -51,3 +51,29 @@ def test_prune_pheromones_limits_groups_and_decay():
         env.tick(1.0)
 
     assert len(env._pheromone_field) == 0
+
+
+def test_food_diffusion_stays_within_bounds():
+    config = EnvironmentConfig(
+        food_diffusion_rate=0.5,
+        food_decay_rate=0.0,
+        resource_patches=[
+            ResourcePatchConfig(
+                position=(-2.0, -2.0),
+                radius=4.0,
+                resource_per_cell=3.0,
+                regen_per_second=0.0,
+                initial_resource=3.0,
+            )
+        ],
+    )
+    env = EnvironmentGrid(cell_size=1.0, config=config, world_size=3.0)
+
+    assert all(0 <= x < env._max_index and 0 <= y < env._max_index for x, y in env._food_cells)
+
+    env.add_food(Vector2(2.9, 2.9), amount=5.0)
+
+    for _ in range(5):
+        env.tick(1.0)
+        assert all(0 <= x < env._max_index and 0 <= y < env._max_index for x, y in env._food_cells)
+        assert len(env._food_cells) <= env._max_index**2
