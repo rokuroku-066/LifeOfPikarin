@@ -64,3 +64,51 @@ def test_collect_neighbors_returns_agents_and_offsets():
     assert len(out_agents) == len(out_offsets)
     for agent, offset in zip(out_agents, out_offsets):
         assert (agent.position - center) == offset
+
+
+def test_collect_neighbors_precomputed_clears_distance_buffer():
+    grid = SpatialGrid(cell_size=2.0)
+    radius = 1.6
+    cell_offsets = grid.build_neighbor_cell_offsets(radius)
+    agent = Agent(
+        id=0,
+        generation=0,
+        group_id=-1,
+        position=Vector2(0.0, 0.0),
+        velocity=Vector2(),
+        energy=10.0,
+        age=0.0,
+        state=AgentState.IDLE,
+    )
+    grid.insert(agent.id, agent.position, agent)
+
+    out_agents: list[Agent] = []
+    out_offsets: list[Vector2] = [Vector2(5, 5)]
+    out_dist_sq: list[float] = [42.0]
+
+    grid.collect_neighbors_precomputed(
+        Vector2(0.5, 0.0),
+        cell_offsets,
+        radius * radius,
+        out_agents,
+        out_offsets,
+        out_dist_sq=out_dist_sq,
+    )
+
+    assert len(out_agents) == 1
+    assert len(out_offsets) == 1
+    assert len(out_dist_sq) == 1
+    assert out_dist_sq[0] == out_offsets[0].length_squared()
+
+    grid.collect_neighbors_precomputed(
+        Vector2(10.0, 10.0),
+        cell_offsets,
+        radius * radius,
+        out_agents,
+        out_offsets,
+        out_dist_sq=out_dist_sq,
+    )
+
+    assert out_agents == []
+    assert out_offsets == []
+    assert out_dist_sq == []
