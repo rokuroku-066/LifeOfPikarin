@@ -69,10 +69,6 @@ class FeedbackConfig:
     base_death_probability_per_second: float = 0.0012
     age_death_probability_per_second: float = 0.00035
     density_death_probability_per_neighbor_per_second: float = 0.0005
-    # Remove global population death pressure; rely on resources + local density
-    global_population_pressure_start: int = 10_000
-    global_population_pressure_slope: float = 0.0
-    global_population_pressure_delay_seconds: float = 4.0
     population_peak_threshold: int = 400
     post_peak_min_groups: int = 5
     post_peak_max_groups: int = 20
@@ -84,10 +80,6 @@ class FeedbackConfig:
     group_adoption_neighbor_threshold: int = 1
     group_adoption_chance: float = 0.5
     group_adoption_small_group_bonus: float = 0.4
-    group_food_neighbor_threshold: int = 6
-    # Disable free group-food spawning (it injects energy and can mask scarcity)
-    group_food_spawn_chance: float = 0.0
-    group_food_spawn_amount: float = 2.0
     group_split_neighbor_threshold: int = 5
     group_split_chance: float = 0.008
     group_split_size_bonus_per_neighbor: float = 0.01
