@@ -67,10 +67,6 @@ class FeedbackConfig:
     age_death_probability_per_second: float = 0.00035
     density_death_probability_per_neighbor_per_second: float = 0.0005
     population_peak_threshold: int = 400
-    post_peak_min_groups: int = 5
-    post_peak_max_groups: int = 20
-    post_peak_group_seed_size: int = 4
-    max_groups: int = 20
     group_formation_warmup_seconds: float = 0.0
     group_formation_neighbor_threshold: int = 5
     group_formation_chance: float = 0.07
@@ -189,7 +185,10 @@ def load_config(raw: dict) -> SimulationConfig:
     skipped_env_keys = {"resource_patches", "group_food_max_per_cell", "group_food_decay_rate", "group_food_diffusion_rate"}
     env_values = {k: v for k, v in env_raw.items() if k not in skipped_env_keys}
     env = EnvironmentConfig(resource_patches=patches, **env_values)
-    feedback = FeedbackConfig(**raw.get("feedback", {}))
+    feedback_raw = raw.get("feedback", {})
+    removed_feedback_keys = {"post_peak_min_groups", "post_peak_max_groups", "max_groups", "post_peak_group_seed_size"}
+    feedback_values = {k: v for k, v in feedback_raw.items() if k not in removed_feedback_keys}
+    feedback = FeedbackConfig(**feedback_values)
     evolution_raw = raw.get("evolution", {})
     clamp = EvolutionClampConfig(
         speed=_pair(clamp_raw.get("speed"), default_clamp.speed),

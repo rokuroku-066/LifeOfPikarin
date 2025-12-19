@@ -44,6 +44,10 @@ def test_feedback_config_excludes_removed_pressure_fields():
     assert "group_food_spawn_chance" not in names
     assert "group_food_spawn_amount" not in names
     assert "group_food_neighbor_threshold" not in names
+    assert "post_peak_min_groups" not in names
+    assert "post_peak_max_groups" not in names
+    assert "max_groups" not in names
+    assert "post_peak_group_seed_size" not in names
 
 
 def test_environment_config_excludes_group_food_fields():
@@ -66,6 +70,15 @@ def test_load_config_ignores_removed_group_food_fields():
     env = config.environment
     assert not hasattr(env, "group_food_max_per_cell")
     assert env.food_per_cell == EnvironmentConfig().food_per_cell
+
+
+def test_load_config_ignores_removed_group_cap_fields():
+    config = load_config(
+        {"feedback": {"post_peak_min_groups": 3, "post_peak_max_groups": 9, "max_groups": 12, "post_peak_group_seed_size": 5}}
+    )
+    feedback = config.feedback
+    assert not hasattr(feedback, "max_groups")
+    assert feedback.population_peak_threshold == FeedbackConfig().population_peak_threshold
 
 
 def test_world_does_not_queue_group_food_spawns():
