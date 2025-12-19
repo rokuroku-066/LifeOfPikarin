@@ -1095,28 +1095,39 @@ class World:
             max(0.0, min(size, position.y)),
         )
 
+    def _orthogonal_neighbor_keys(
+        self, position: Vector2
+    ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int], tuple[int, int]]:
+        base_key = self._environment._cell_key(self._clamp_position(position))
+        add_key = self._environment._add_key2
+        right = add_key(base_key, 1, 0)
+        left = add_key(base_key, -1, 0)
+        up = add_key(base_key, 0, 1)
+        down = add_key(base_key, 0, -1)
+        return (right, left, up, down)
+
     def _food_gradient(self, position: Vector2) -> Vector2:
-        step = self._config.cell_size
-        right = self._environment.peek_food(self._clamp_position(position + Vector2(step, 0)))
-        left = self._environment.peek_food(self._clamp_position(position + Vector2(-step, 0)))
-        up = self._environment.peek_food(self._clamp_position(position + Vector2(0, step)))
-        down = self._environment.peek_food(self._clamp_position(position + Vector2(0, -step)))
+        right_key, left_key, up_key, down_key = self._orthogonal_neighbor_keys(position)
+        right = self._environment.peek_food(right_key)
+        left = self._environment.peek_food(left_key)
+        up = self._environment.peek_food(up_key)
+        down = self._environment.peek_food(down_key)
         return Vector2(right - left, up - down)
 
     def _pheromone_gradient(self, group_id: int, position: Vector2) -> Vector2:
-        step = self._config.cell_size
-        right = self._environment.sample_pheromone(self._clamp_position(position + Vector2(step, 0)), group_id)
-        left = self._environment.sample_pheromone(self._clamp_position(position + Vector2(-step, 0)), group_id)
-        up = self._environment.sample_pheromone(self._clamp_position(position + Vector2(0, step)), group_id)
-        down = self._environment.sample_pheromone(self._clamp_position(position + Vector2(0, -step)), group_id)
+        right_key, left_key, up_key, down_key = self._orthogonal_neighbor_keys(position)
+        right = self._environment.sample_pheromone(right_key, group_id)
+        left = self._environment.sample_pheromone(left_key, group_id)
+        up = self._environment.sample_pheromone(up_key, group_id)
+        down = self._environment.sample_pheromone(down_key, group_id)
         return Vector2(right - left, up - down)
 
     def _danger_gradient(self, position: Vector2) -> Vector2:
-        step = self._config.cell_size
-        right = self._environment.sample_danger(self._clamp_position(position + Vector2(step, 0)))
-        left = self._environment.sample_danger(self._clamp_position(position + Vector2(-step, 0)))
-        up = self._environment.sample_danger(self._clamp_position(position + Vector2(0, step)))
-        down = self._environment.sample_danger(self._clamp_position(position + Vector2(0, -step)))
+        right_key, left_key, up_key, down_key = self._orthogonal_neighbor_keys(position)
+        right = self._environment.sample_danger(right_key)
+        left = self._environment.sample_danger(left_key)
+        up = self._environment.sample_danger(up_key)
+        down = self._environment.sample_danger(down_key)
         return Vector2(right - left, up - down)
 
     def _tick_environment(self, active_groups: Set[int]) -> None:

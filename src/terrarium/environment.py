@@ -104,42 +104,45 @@ class EnvironmentGrid:
                 else:
                     self._food_cells[clamped_key] = cell
 
-    def sample_food(self, position: Vector2) -> float:
-        key = self._cell_key(position)
+    def sample_food(self, position: Vector2 | tuple[int, int]) -> float:
+        key = position if isinstance(position, tuple) else self._cell_key(position)
         cell = self._get_or_create_food_cell(key)
         self._food_cells[key] = cell
         return cell.value
 
-    def peek_food(self, position: Vector2) -> float:
-        cell = self._food_cells.get(self._cell_key(position))
+    def peek_food(self, position: Vector2 | tuple[int, int]) -> float:
+        key = position if isinstance(position, tuple) else self._cell_key(position)
+        cell = self._food_cells.get(key)
         return cell.value if cell is not None else 0.0
 
-    def consume_food(self, position: Vector2, amount: float) -> None:
-        key = self._cell_key(position)
+    def consume_food(self, position: Vector2 | tuple[int, int], amount: float) -> None:
+        key = position if isinstance(position, tuple) else self._cell_key(position)
         cell = self._get_or_create_food_cell(key)
         cell.value = max(0.0, cell.value - amount)
         self._food_cells[key] = cell
 
-    def add_food(self, position: Vector2, amount: float) -> None:
+    def add_food(self, position: Vector2 | tuple[int, int], amount: float) -> None:
         if amount <= 0:
             return
-        key = self._cell_key(position)
+        key = position if isinstance(position, tuple) else self._cell_key(position)
         cell = self._get_or_create_food_cell(key, initial_value=0.0)
         cell.value = min(cell.max, cell.value + amount)
         self._food_cells[key] = cell
 
-    def sample_danger(self, position: Vector2) -> float:
-        return self._danger_field.get(self._cell_key(position), 0.0)
+    def sample_danger(self, position: Vector2 | tuple[int, int]) -> float:
+        key = position if isinstance(position, tuple) else self._cell_key(position)
+        return self._danger_field.get(key, 0.0)
 
-    def add_danger(self, position: Vector2, amount: float) -> None:
-        key = self._cell_key(position)
+    def add_danger(self, position: Vector2 | tuple[int, int], amount: float) -> None:
+        key = position if isinstance(position, tuple) else self._cell_key(position)
         self._danger_field[key] = self._danger_field.get(key, 0.0) + amount
 
     def has_danger(self) -> bool:
         return bool(self._danger_field)
 
-    def sample_pheromone(self, position: Vector2, group_id: int) -> float:
-        field_key = (*self._cell_key(position), group_id)
+    def sample_pheromone(self, position: Vector2 | tuple[int, int], group_id: int) -> float:
+        key = position if isinstance(position, tuple) else self._cell_key(position)
+        field_key = (*key, group_id)
         return self._pheromone_field.get(field_key, 0.0)
 
     def add_pheromone(self, position: Vector2, group_id: int, amount: float) -> None:
