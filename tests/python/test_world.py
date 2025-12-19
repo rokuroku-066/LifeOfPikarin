@@ -11,6 +11,7 @@ from terrarium.config import (
     EvolutionClampConfig,
     EvolutionConfig,
     FeedbackConfig,
+    load_config,
     SimulationConfig,
     SpeciesConfig,
 )
@@ -43,6 +44,28 @@ def test_feedback_config_excludes_removed_pressure_fields():
     assert "group_food_spawn_chance" not in names
     assert "group_food_spawn_amount" not in names
     assert "group_food_neighbor_threshold" not in names
+
+
+def test_environment_config_excludes_group_food_fields():
+    names = {f.name for f in fields(EnvironmentConfig)}
+    assert "group_food_max_per_cell" not in names
+    assert "group_food_decay_rate" not in names
+    assert "group_food_diffusion_rate" not in names
+
+
+def test_load_config_ignores_removed_group_food_fields():
+    config = load_config(
+        {
+            "environment": {
+                "group_food_max_per_cell": 9.9,
+                "group_food_decay_rate": 0.5,
+                "group_food_diffusion_rate": 0.1,
+            }
+        }
+    )
+    env = config.environment
+    assert not hasattr(env, "group_food_max_per_cell")
+    assert env.food_per_cell == EnvironmentConfig().food_per_cell
 
 
 def test_world_does_not_queue_group_food_spawns():
