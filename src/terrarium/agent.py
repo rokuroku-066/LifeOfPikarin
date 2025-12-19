@@ -20,6 +20,11 @@ class AgentTraits:
     metabolism: float = 1.0
     disease_resistance: float = 1.0
     fertility: float = 1.0
+    sociality: float = 1.0
+    territoriality: float = 1.0
+    loyalty: float = 1.0
+    founder: float = 1.0
+    kin_bias: float = 1.0
 
 
 @dataclass

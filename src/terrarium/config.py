@@ -131,6 +131,11 @@ class EvolutionClampConfig:
     metabolism: tuple[float, float] = (0.8, 1.25)
     disease_resistance: tuple[float, float] = (0.6, 1.4)
     fertility: tuple[float, float] = (0.7, 1.3)
+    sociality: tuple[float, float] = (0.7, 1.3)
+    territoriality: tuple[float, float] = (0.7, 1.3)
+    loyalty: tuple[float, float] = (0.7, 1.3)
+    founder: tuple[float, float] = (0.7, 1.3)
+    kin_bias: tuple[float, float] = (0.7, 1.3)
 
 
 @dataclass
@@ -142,6 +147,11 @@ class EvolutionConfig:
     metabolism_mutation_weight: float = 0.5
     disease_resistance_mutation_weight: float = 0.5
     fertility_mutation_weight: float = 0.5
+    sociality_mutation_weight: float = 0.2
+    territoriality_mutation_weight: float = 0.2
+    loyalty_mutation_weight: float = 0.2
+    founder_mutation_weight: float = 0.2
+    kin_bias_mutation_weight: float = 0.2
     clamp: EvolutionClampConfig = field(default_factory=EvolutionClampConfig)
 
 
@@ -198,6 +208,11 @@ def load_config(raw: dict) -> SimulationConfig:
         metabolism=_pair(clamp_raw.get("metabolism"), default_clamp.metabolism),
         disease_resistance=_pair(clamp_raw.get("disease_resistance"), default_clamp.disease_resistance),
         fertility=_pair(clamp_raw.get("fertility"), default_clamp.fertility),
+        sociality=_pair(clamp_raw.get("sociality"), default_clamp.sociality),
+        territoriality=_pair(clamp_raw.get("territoriality"), default_clamp.territoriality),
+        loyalty=_pair(clamp_raw.get("loyalty"), default_clamp.loyalty),
+        founder=_pair(clamp_raw.get("founder"), default_clamp.founder),
+        kin_bias=_pair(clamp_raw.get("kin_bias"), default_clamp.kin_bias),
     )
     evolution_values = {k: v for k, v in evolution_raw.items() if k != "clamp"}
     evolution = EvolutionConfig(clamp=clamp, **evolution_values)
