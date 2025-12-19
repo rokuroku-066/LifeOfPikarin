@@ -147,7 +147,6 @@ class EnvironmentGrid:
         self._pheromone_field[key] = self._pheromone_field.get(key, 0.0) + amount
 
     def tick(self, delta_time: float) -> None:
-        self._sanitize_food_keys()
         self._regen_food(delta_time)
         self._diffuse_food(delta_time)
         if self._danger_diffusion_rate > 0 or self._danger_decay_rate > 0:
@@ -182,10 +181,8 @@ class EnvironmentGrid:
             share = spread_portion * 0.25
 
             self._accumulate(self._food_buffer, key, remain)
-            self._accumulate(self._food_buffer, (key[0] + 1, key[1]), share)
-            self._accumulate(self._food_buffer, (key[0] - 1, key[1]), share)
-            self._accumulate(self._food_buffer, (key[0], key[1] + 1), share)
-            self._accumulate(self._food_buffer, (key[0], key[1] - 1), share)
+            for ox, oy in _ORTHOGONAL_OFFSETS:
+                self._accumulate(self._food_buffer, self._add_key(key, ox, oy), share)
 
         for key, value in self._food_buffer.items():
             if value <= 1e-4:
@@ -285,7 +282,7 @@ class EnvironmentGrid:
             radius_cells = int(max(1, patch.radius // self._cell_size))
             for dx in range(-radius_cells, radius_cells + 1):
                 for dy in range(-radius_cells, radius_cells + 1):
-                    key = (cx + dx, cy + dy)
+                    key = self._add_key((cx, cy), dx, dy)
                     cell = FoodCell(
                         value=patch.initial_resource,
                         max=patch.resource_per_cell,
