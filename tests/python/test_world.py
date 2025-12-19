@@ -28,6 +28,58 @@ def run_steps(config: SimulationConfig, steps: int):
     return snapshots
 
 
+def make_static_config(seed: int = 1) -> SimulationConfig:
+    config = SimulationConfig(
+        seed=seed,
+        time_step=1.0,
+        initial_population=0,
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+            reproduction_energy_threshold=1.0,
+            adult_age=0.0,
+        ),
+    )
+    feedback = config.feedback
+    feedback.reproduction_base_chance = 0.0
+    feedback.base_death_probability_per_second = 0.0
+    feedback.age_death_probability_per_second = 0.0
+    feedback.density_death_probability_per_neighbor_per_second = 0.0
+    feedback.disease_probability_per_neighbor = 0.0
+    feedback.stress_drain_per_neighbor = 0.0
+    feedback.group_switch_chance = 0.0
+    feedback.group_detach_new_group_chance = 0.0
+    feedback.group_formation_chance = 0.0
+    feedback.group_split_chance = 0.0
+    feedback.group_split_new_group_chance = 0.0
+    feedback.group_birth_seed_chance = 0.0
+    feedback.group_mutation_chance = 0.0
+    feedback.group_cohesion_weight = 0.0
+    feedback.group_cohesion_radius = 0.0
+    feedback.group_adoption_chance = 0.0
+    feedback.group_adoption_small_group_bonus = 0.0
+    feedback.group_adoption_guard_min_allies = 0
+    feedback.group_adoption_neighbor_threshold = 0
+    feedback.group_split_recruitment_count = 0
+    feedback.group_seek_weight = 0.0
+    feedback.group_seek_radius = 0.0
+    feedback.other_group_avoid_weight = 0.0
+    feedback.other_group_avoid_radius = 0.0
+    feedback.min_separation_weight = 0.0
+    feedback.personal_space_weight = 0.0
+    feedback.ally_cohesion_weight = 0.0
+    feedback.ally_separation_weight = 0.0
+    feedback.other_group_separation_weight = 0.0
+    feedback.group_base_attraction_weight = 0.0
+    feedback.group_detach_after_seconds = 1000.0
+    feedback.group_detach_close_neighbor_threshold = 0
+    return config
+
+
 def test_deterministic_steps():
     config = SimulationConfig(seed=1234, initial_population=50, max_population=120)
     result_a = run_steps(config, 50)
@@ -298,6 +350,74 @@ def test_snapshot_contains_metadata_and_agent_signals():
     assert payload["speed"] == approx(Vector2(payload["vx"], payload["vy"]).length())
     assert payload["behavior_state"]
     assert payload["is_alive"]
+
+
+def test_tick_metrics_accumulates_zero_population():
+    world = World(make_static_config(seed=31))
+
+    metrics = world.step(0)
+    snapshot = world.snapshot(1)
+
+    assert metrics.population == 0
+    assert metrics.average_energy == approx(0.0)
+    assert metrics.average_age == approx(0.0)
+    assert metrics.groups == 0
+    assert metrics.ungrouped == 0
+    assert snapshot.metrics.population == metrics.population
+    assert snapshot.metrics.groups == metrics.groups
+    assert snapshot.metrics.ungrouped == metrics.ungrouped
+
+
+def test_tick_metrics_accumulates_grouped_population_once():
+    config = make_static_config(seed=77)
+    world = World(config)
+    world.agents.extend(
+        [
+            Agent(
+                id=0,
+                generation=0,
+                group_id=2,
+                position=Vector2(0.0, 0.0),
+                velocity=Vector2(),
+                energy=6.0,
+                age=2.0,
+                state=AgentState.WANDER,
+            ),
+            Agent(
+                id=1,
+                generation=0,
+                group_id=2,
+                position=Vector2(1.0, 0.0),
+                velocity=Vector2(),
+                energy=8.0,
+                age=4.0,
+                state=AgentState.WANDER,
+            ),
+        ]
+    )
+    world._next_id = 2
+    world._refresh_index_map()
+
+    metrics = world.step(0)
+    world._metrics.clear()
+    world._population_stats_dirty = False
+
+    def fail_recalc():
+        raise AssertionError("Population stats should be reused for snapshot when cache is fresh")
+
+    world._recalculate_population_stats = fail_recalc  # type: ignore[assignment]
+    snapshot = world.snapshot(1)
+
+    assert metrics.population == 2
+    assert metrics.births == 0
+    assert metrics.deaths == 0
+    assert metrics.groups == 1
+    assert metrics.ungrouped == 0
+    assert metrics.average_energy == approx(7.0)
+    assert metrics.average_age == approx(4.0)
+    assert snapshot.metrics.population == metrics.population
+    assert snapshot.metrics.groups == metrics.groups
+    assert snapshot.metrics.average_energy == approx(metrics.average_energy)
 
 
 def test_heading_persists_when_still():
