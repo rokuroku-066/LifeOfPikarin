@@ -111,7 +111,6 @@ class World:
         self._pending_food: List[tuple[Vector2, float]] = []
         self._pending_danger: List[tuple[Vector2, float]] = []
         self._pending_pheromone: List[tuple[Vector2, int, float]] = []
-        self._pending_group_food: List[tuple[Vector2, int, float]] = []
         self._ungrouped_neighbors: List[Agent] = []
         self._group_counts_scratch: Dict[int, int] = {}
         self._group_lineage_counts: Dict[int, int] = {}
@@ -149,7 +148,6 @@ class World:
         self._pending_food.clear()
         self._pending_danger.clear()
         self._pending_pheromone.clear()
-        self._pending_group_food.clear()
         self._group_sizes.clear()
         self._group_lineage_counts.clear()
         self._group_bases.clear()
@@ -177,7 +175,6 @@ class World:
         self._pending_food.clear()
         self._pending_danger.clear()
         self._pending_pheromone.clear()
-        self._pending_group_food.clear()
 
         sim_time = tick * self._config.time_step
         can_form_groups = sim_time >= self._config.feedback.group_formation_warmup_seconds
@@ -267,8 +264,6 @@ class World:
                 sim_time,
                 traits=traits,
             )
-            if agent.alive:
-                self._maybe_spawn_group_food(agent, close_allies)
             if agent.state == AgentState.FLEE or sensed_danger:
                 self._pending_danger.append((agent.position, self._config.environment.danger_pulse_on_flee))
 
@@ -701,20 +696,6 @@ class World:
             self._set_group(agent, target_group)
             if target_group != self._UNGROUPED and can_form_groups:
                 self._recruit_split_neighbors(previous_group, target_group, neighbors, neighbor_offsets)
-
-    def _maybe_spawn_group_food(self, agent: Agent, close_allies: int) -> None:
-        if agent.group_id == self._UNGROUPED:
-            return
-        threshold = max(0, self._config.feedback.group_food_neighbor_threshold)
-        if close_allies < threshold:
-            return
-        spawn_chance = self._config.feedback.group_food_spawn_chance
-        if spawn_chance <= 0.0 or self._rng.next_float() >= spawn_chance:
-            return
-        amount = self._config.feedback.group_food_spawn_amount
-        if amount <= 0.0:
-            return
-        self._pending_group_food.append((agent.position, agent.group_id, amount))
 
     def _compute_desired_velocity(
         self,
@@ -1296,13 +1277,6 @@ class World:
             + agent.age * self._config.feedback.age_death_probability_per_second
             + neighbor_count * self._config.feedback.density_death_probability_per_neighbor_per_second
         )
-        pressure = 0.0
-        delay = self._config.feedback.global_population_pressure_delay_seconds
-        start = self._config.feedback.global_population_pressure_start
-        slope = self._config.feedback.global_population_pressure_slope
-        if sim_time >= delay and slope > 0.0 and population > start:
-            pressure = (population - start) * slope
-            hazard_per_second += pressure
         hazard_chance = min(1.0, hazard_per_second * dt)
         if hazard_chance > 0.0 and self._rng.next_float() < hazard_chance:
             agent.alive = False
@@ -1345,12 +1319,9 @@ class World:
             self._environment.add_danger(pos, amt)
         for pos, gid, amt in self._pending_pheromone:
             self._environment.add_pheromone(pos, gid, amt)
-        for pos, gid, amt in self._pending_group_food:
-            self._environment.add_group_food(pos, gid, amt)
         self._pending_food.clear()
         self._pending_danger.clear()
         self._pending_pheromone.clear()
-        self._pending_group_food.clear()
 
     def _apply_births(self) -> None:
         for agent in self._birth_queue:

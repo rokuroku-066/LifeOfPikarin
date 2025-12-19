@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import fields
+
 from pygame.math import Vector2
 from pytest import approx
 
@@ -31,6 +33,24 @@ def test_deterministic_steps():
     config_b = SimulationConfig(seed=1234, initial_population=50, max_population=120)
     result_b = run_steps(config_b, 50)
     assert result_a == result_b
+
+
+def test_feedback_config_excludes_removed_pressure_fields():
+    names = {f.name for f in fields(FeedbackConfig)}
+    assert "global_population_pressure_start" not in names
+    assert "global_population_pressure_slope" not in names
+    assert "global_population_pressure_delay_seconds" not in names
+    assert "group_food_spawn_chance" not in names
+    assert "group_food_spawn_amount" not in names
+    assert "group_food_neighbor_threshold" not in names
+
+
+def test_world_does_not_queue_group_food_spawns():
+    config = SimulationConfig(seed=2025, initial_population=0)
+    world = World(config)
+
+    assert not hasattr(world, "_pending_group_food")
+    assert not hasattr(world, "_maybe_spawn_group_food")
 
 
 def test_deterministic_steps_with_evolution_enabled():
