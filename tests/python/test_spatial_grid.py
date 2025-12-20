@@ -14,14 +14,26 @@ def test_neighbor_query_matches_bruteforce():
         Vector2(3, 0.5),
         Vector2(6, 6),
     ]
+    agents = []
     for idx, pos in enumerate(positions):
-        grid.insert(idx, pos)
+        agent = Agent(
+            id=idx,
+            generation=0,
+            group_id=-1,
+            position=pos,
+            velocity=Vector2(),
+            energy=10.0,
+            age=0.0,
+            state=AgentState.IDLE,
+        )
+        agents.append(agent)
+        grid.insert(agent)
 
     center = Vector2(1, 1)
     radius = 3.0
     neighbors = grid.get_neighbors(center, radius)
-    brute = [idx for idx, pos in enumerate(positions) if (pos - center).length_squared() <= radius * radius]
-    found_ids = sorted([entry.id for entry in neighbors])
+    brute = [agent.id for agent in agents if (agent.position - center).length_squared() <= radius * radius]
+    found_ids = sorted(agent.id for agent in neighbors)
     assert found_ids == sorted(brute)
 
 
@@ -46,7 +58,7 @@ def test_collect_neighbors_returns_agents_and_offsets():
             state=AgentState.IDLE,
         )
         agents.append(agent)
-        grid.insert(agent.id, agent.position, agent)
+        grid.insert(agent)
 
     center = Vector2(1, 1)
     radius = 3.0
@@ -80,7 +92,7 @@ def test_collect_neighbors_precomputed_clears_distance_buffer():
         age=0.0,
         state=AgentState.IDLE,
     )
-    grid.insert(agent.id, agent.position, agent)
+    grid.insert(agent)
 
     out_agents: list[Agent] = []
     out_offsets: list[Vector2] = [Vector2(5, 5)]

@@ -39,6 +39,7 @@ class Agent:
     state: AgentState
     lineage_id: int = 0
     traits: AgentTraits = field(default_factory=AgentTraits)
+    traits_dirty: bool = True
     alive: bool = True
     stress: float = 0.0
     group_lonely_seconds: float = 0.0
@@ -46,3 +47,5 @@ class Agent:
     heading: float = 0.0
     wander_dir: Vector2 = field(default_factory=Vector2)
     wander_time: float = 0.0
+    last_desired: Vector2 = field(default_factory=Vector2)
+    last_sensed_danger: bool = False

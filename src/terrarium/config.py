@@ -108,6 +108,10 @@ class FeedbackConfig:
     min_separation_weight: float = 3.0
     group_seek_radius: float = 10.0
     group_seek_weight: float = 1.8
+    group_update_population_threshold: int = 320
+    group_update_stride: int = 3
+    steering_update_population_threshold: int = 320
+    steering_update_stride: int = 2
 
 
 @dataclass
