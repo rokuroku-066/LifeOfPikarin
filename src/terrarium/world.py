@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 from time import perf_counter
 
 from pygame.math import Vector2
@@ -22,9 +22,27 @@ def _derive_stream_seed(seed: int, salt: int) -> int:
 
 
 def _safe_normalize(vector: Vector2) -> Vector2:
-    if vector.length_squared() < 1e-10:
+    return _safe_normalize_xy(vector.x, vector.y)
+
+
+def _safe_normalize_xy(x: float, y: float) -> Vector2:
+    magnitude_sq = x * x + y * y
+    if magnitude_sq < 1e-10:
         return Vector2()
-    return vector.normalize()
+    inv = 1.0 / math.sqrt(magnitude_sq)
+    return Vector2(x * inv, y * inv)
+
+
+def _clamp_length_xy(x: float, y: float, max_length: float) -> Vector2:
+    if max_length <= 0:
+        return Vector2()
+    magnitude_sq = x * x + y * y
+    if magnitude_sq <= max_length * max_length:
+        return Vector2(x, y)
+    if magnitude_sq == 0:
+        return Vector2()
+    inv = max_length / math.sqrt(magnitude_sq)
+    return Vector2(x * inv, y * inv)
 
 
 def _clamp_length(vector: Vector2, max_length: float) -> Vector2:
@@ -188,16 +206,26 @@ class World:
         if current_population > self._max_population_seen:
             self._max_population_seen = current_population
 
+        group_update_stride = max(1, int(feedback.group_update_stride))
+        group_update_threshold = max(0, int(feedback.group_update_population_threshold))
+        use_group_stride = current_population >= group_update_threshold and group_update_stride > 1
+        steering_stride = max(1, int(feedback.steering_update_stride))
+        steering_threshold = max(0, int(feedback.steering_update_population_threshold))
+        use_steering_stride = current_population >= steering_threshold and steering_stride > 1
+        detach_radius_sq = (
+            feedback.group_detach_radius * feedback.group_detach_radius if use_group_stride else 0.0
+        )
+        close_threshold = feedback.group_detach_close_neighbor_threshold if use_group_stride else 0
+
         self._grid.clear()
         for agent in self._agents:
             if agent.group_id >= 0:
                 self._group_sizes[agent.group_id] = self._group_sizes.get(agent.group_id, 0) + 1
-            self._grid.insert(agent.id, agent.position, agent)
+            self._grid.insert(agent)
 
         neighbor_checks = 0
         births = 0
         deaths = 0
-        cluster_radius_sq = self._config.feedback.group_cohesion_radius * self._config.feedback.group_cohesion_radius
 
         vision_cell_offsets = self._vision_cell_offsets
         vision_radius_sq = self._vision_radius_sq
@@ -207,15 +235,19 @@ class World:
         ungrouped = 0
         group_ids = self._group_scratch
         group_ids.clear()
+        danger_present = self._environment.has_danger()
+        danger_present = self._environment.has_danger()
 
         for agent in self._agents:
             if not agent.alive:
                 continue
 
-            same_group_neighbors = 0
-            close_allies = 0
             original_group = agent.group_id
-            traits = self._clamp_traits(agent.traits)
+            if agent.traits_dirty:
+                traits = self._clamp_traits(agent.traits)
+                agent.traits_dirty = False
+            else:
+                traits = agent.traits
             speed_limit = self._trait_speed_limit(traits)
 
             self._grid.collect_neighbors_precomputed(
@@ -229,31 +261,50 @@ class World:
             )
             neighbor_checks += len(self._neighbor_agents)
             neighbor_dist_sq = self._neighbor_dist_sq
-            for other, dist_sq in zip(self._neighbor_agents, neighbor_dist_sq):
-                if original_group != self._UNGROUPED and other.group_id == original_group:
-                    same_group_neighbors += 1
-                    if cluster_radius_sq > 1e-9 and dist_sq <= cluster_radius_sq:
-                        close_allies += 1
-
-            self._update_group_membership(
-                agent, self._neighbor_agents, self._neighbor_offsets, neighbor_dist_sq, can_form_groups, traits=traits
-            )
-            if agent.group_id != original_group:
-                close_allies = 0
-                if agent.group_id != self._UNGROUPED and cluster_radius_sq > 1e-9:
+            if use_group_stride and (tick + agent.id) % group_update_stride != 0:
+                same_group_neighbors = 0
+                same_group_close_neighbors = 0
+                if agent.group_id != self._UNGROUPED:
                     for other, dist_sq in zip(self._neighbor_agents, neighbor_dist_sq):
-                        if other.group_id == agent.group_id and dist_sq <= cluster_radius_sq:
-                            close_allies += 1
+                        if other.group_id != agent.group_id:
+                            continue
+                        same_group_neighbors += 1
+                        if dist_sq <= detach_radius_sq:
+                            same_group_close_neighbors += 1
+                    if same_group_close_neighbors >= close_threshold:
+                        agent.group_lonely_seconds = 0.0
+                    else:
+                        agent.group_lonely_seconds += dt
+                else:
+                    agent.group_lonely_seconds = 0.0
+                self._decay_group_cooldown(agent)
+            else:
+                same_group_neighbors = self._update_group_membership(
+                    agent,
+                    self._neighbor_agents,
+                    self._neighbor_offsets,
+                    neighbor_dist_sq,
+                    can_form_groups,
+                    traits=traits,
+                )
 
-            desired, sensed_danger = self._compute_desired_velocity(
-                agent,
-                self._neighbor_agents,
-                self._neighbor_offsets,
-                speed_limit,
-                return_sensed=True,
-                neighbor_dist_sq=neighbor_dist_sq,
-                traits=traits,
-            )
+            steering_update = not use_steering_stride or (tick + agent.id) % steering_stride == 0
+            if steering_update:
+                desired, sensed_danger = self._compute_desired_velocity(
+                    agent,
+                    self._neighbor_agents,
+                    self._neighbor_offsets,
+                    speed_limit,
+                    return_sensed=True,
+                    neighbor_dist_sq=neighbor_dist_sq,
+                    traits=traits,
+                    danger_present=danger_present,
+                )
+                agent.last_desired = desired
+                agent.last_sensed_danger = sensed_danger
+            else:
+                desired = agent.last_desired
+                sensed_danger = agent.last_sensed_danger
             accel = desired - agent.velocity
             accel = _clamp_length(accel, species.max_acceleration)
             agent.velocity = _clamp_length(agent.velocity + accel * dt, speed_limit)
@@ -350,8 +401,10 @@ class World:
                 state=AgentState.WANDER,
                 lineage_id=lineage,
                 traits=traits,
+                traits_dirty=False,
                 wander_dir=self._rng.next_unit_circle(),
                 wander_time=self._config.species.wander_refresh_seconds,
+                last_desired=velocity.copy(),
             )
             self._agents.append(agent)
             self._next_id += 1
@@ -534,20 +587,23 @@ class World:
         neighbor_dist_sq: List[float],
         can_form_groups: bool,
         traits: AgentTraits | None = None,
-    ) -> None:
+    ) -> int:
         original_group = agent.group_id
         traits = self._clamp_traits(agent.traits) if traits is None else traits
+        feedback = self._config.feedback
         loyalty = max(0.1, traits.loyalty)
         kin_bias = traits.kin_bias
+        use_kin_bias = abs(kin_bias - 1.0) > 1e-6
         prev_lonely = agent.group_lonely_seconds
         self._decay_group_cooldown(agent)
         self._group_counts_scratch.clear()
-        self._group_lineage_counts.clear()
         self._ungrouped_neighbors.clear()
+        if use_kin_bias:
+            self._group_lineage_counts.clear()
         same_group_neighbors = 0
         same_group_close_neighbors = 0
-        detach_radius_sq = self._config.feedback.group_detach_radius * self._config.feedback.group_detach_radius
-        close_threshold = self._config.feedback.group_detach_close_neighbor_threshold
+        detach_radius_sq = feedback.group_detach_radius * feedback.group_detach_radius
+        close_threshold = feedback.group_detach_close_neighbor_threshold
 
         for other, offset, dist_sq in zip(neighbors, neighbor_offsets, neighbor_dist_sq):
             if other.group_id == self._UNGROUPED:
@@ -558,7 +614,7 @@ class World:
                     same_group_close_neighbors += 1
             if other.group_id >= 0:
                 self._group_counts_scratch[other.group_id] = self._group_counts_scratch.get(other.group_id, 0) + 1
-                if other.lineage_id == agent.lineage_id:
+                if use_kin_bias and other.lineage_id == agent.lineage_id:
                     self._group_lineage_counts[other.group_id] = self._group_lineage_counts.get(other.group_id, 0) + 1
 
         majority_group = self._UNGROUPED
@@ -568,8 +624,11 @@ class World:
         majority_score = -float("inf")
         switch_score = -float("inf")
         for gid, count in self._group_counts_scratch.items():
-            kin_count = self._group_lineage_counts.get(gid, 0)
-            score = count + (kin_bias - 1.0) * kin_count
+            if use_kin_bias:
+                kin_count = self._group_lineage_counts.get(gid, 0)
+                score = count + (kin_bias - 1.0) * kin_count
+            else:
+                score = float(count)
             if score > majority_score or (math.isclose(score, majority_score) and count > majority_count):
                 majority_group = gid
                 majority_count = count
@@ -588,10 +647,10 @@ class World:
                 agent.group_lonely_seconds = 0.0
             else:
                 agent.group_lonely_seconds = prev_lonely + self._config.time_step
-            effective_detach_seconds = self._config.feedback.group_detach_after_seconds * loyalty
+            effective_detach_seconds = feedback.group_detach_after_seconds * loyalty
             if agent.group_lonely_seconds >= effective_detach_seconds:
-                switch_threshold = max(1, self._config.feedback.group_adoption_neighbor_threshold)
-                switch_chance = min(1.0, self._config.feedback.group_switch_chance / max(0.1, loyalty))
+                switch_threshold = max(1, feedback.group_adoption_neighbor_threshold)
+                switch_chance = min(1.0, feedback.group_switch_chance / max(0.1, loyalty))
                 if (
                     switch_group != self._UNGROUPED
                     and switch_count >= switch_threshold
@@ -602,7 +661,7 @@ class World:
                     if (
                         can_form_groups
                         and self._rng.next_float()
-                        < min(1.0, self._config.feedback.group_detach_new_group_chance * max(0.0, traits.founder))
+                        < min(1.0, feedback.group_detach_new_group_chance * max(0.0, traits.founder))
                     ):
                         new_group = self._next_group_id
                         self._next_group_id += 1
@@ -631,15 +690,13 @@ class World:
                 if dist_sq < nearest_dist_sq:
                     nearest_group = gid
                     nearest_dist_sq = dist_sq
-            if nearest_group != self._UNGROUPED and self._rng.next_float() < self._config.feedback.group_adoption_chance:
+            if nearest_group != self._UNGROUPED and self._rng.next_float() < feedback.group_adoption_chance:
                 self._set_group(agent, nearest_group)
         if agent.group_id == original_group:
             self._try_split_group(
                 agent, same_group_neighbors, neighbors, neighbor_offsets, can_form_groups, traits=traits
             )
-        self._group_counts_scratch.clear()
-        self._group_lineage_counts.clear()
-        self._ungrouped_neighbors.clear()
+        return same_group_neighbors
 
     def _try_form_group(self, agent: Agent) -> None:
         if agent.group_id != self._UNGROUPED:
@@ -740,9 +797,11 @@ class World:
         return_sensed: bool = False,
         neighbor_dist_sq: List[float] | None = None,
         traits: AgentTraits | None = None,
+        danger_present: bool | None = None,
     ) -> tuple[Vector2, bool] | Vector2:
-        desired = ZERO
-        flee_vector = ZERO
+        desired_x = 0.0
+        desired_y = 0.0
+        flee_vector = Vector2()
         sensed_danger = False
         traits = self._clamp_traits(agent.traits) if traits is None else traits
         species = self._config.species
@@ -757,10 +816,12 @@ class World:
             for offset in neighbor_offsets:
                 dist_sq_list.append(offset.x * offset.x + offset.y * offset.y)
 
-        danger_level = self._environment.sample_danger(agent.position)
-        danger_gradient = ZERO
-        danger_present = danger_level > 1e-6 or self._environment.has_danger()
+        if danger_present is None:
+            danger_present = self._environment.has_danger()
+        danger_level = 0.0
+        danger_gradient = Vector2()
         if danger_present:
+            danger_level = self._environment.sample_danger(agent.position)
             danger_gradient = self._danger_gradient(agent.position)
         if danger_level > 0.1:
             sensed_danger = True
@@ -771,7 +832,11 @@ class World:
             )
 
         for other, dist_sq, offset in zip(neighbors, dist_sq_list, neighbor_offsets):
-            groups_differ = agent.group_id != self._UNGROUPED and other.group_id != self._UNGROUPED and other.group_id != agent.group_id
+            groups_differ = (
+                agent.group_id != self._UNGROUPED
+                and other.group_id != self._UNGROUPED
+                and other.group_id != agent.group_id
+            )
             if groups_differ and dist_sq < 4.0:
                 flee_vector = flee_vector - _safe_normalize(offset) * base_speed
                 sensed_danger = True
@@ -781,14 +846,57 @@ class World:
             return flee_vector, sensed_danger
 
         food_here = self._environment.sample_food(agent.position)
-        food_gradient = ZERO
+        food_gradient = Vector2()
         pheromone_gradient = ZERO if agent.group_id == self._UNGROUPED else self._pheromone_gradient(agent.group_id, agent.position)
         danger_gradient_away = danger_gradient
-        group_cohesion_bias = self._group_cohesion(agent, neighbors, neighbor_offsets, dist_sq_list)
-        group_seek_bias = self._group_seek_bias(agent, neighbors, neighbor_offsets, dist_sq_list)
-        intergroup_bias = self._intergroup_avoidance(agent, neighbors, neighbor_offsets, dist_sq_list)
-        personal_space_bias = self._personal_space(neighbor_offsets, dist_sq_list)
-        base_bias = self._group_base_attraction(agent)
+        grouped = agent.group_id != self._UNGROUPED
+        if neighbors:
+            personal_space_bias = (
+                self._personal_space(neighbor_offsets, dist_sq_list)
+                if feedback.personal_space_weight > 0.0 and feedback.personal_space_radius > 1e-6
+                else ZERO
+            )
+            separation_bias = (
+                self._separation(agent, neighbors, neighbor_offsets, dist_sq_list)
+                if feedback.ally_separation_weight > 0.0
+                or feedback.other_group_separation_weight > 0.0
+                or feedback.min_separation_weight > 0.0
+                else ZERO
+            )
+            intergroup_bias = (
+                self._intergroup_avoidance(agent, neighbors, neighbor_offsets, dist_sq_list)
+                if grouped
+                and territoriality > 1e-6
+                and feedback.other_group_avoid_weight > 0.0
+                and feedback.other_group_avoid_radius > 1e-6
+                else ZERO
+            )
+            group_cohesion_bias = (
+                self._group_cohesion(agent, neighbors, neighbor_offsets, dist_sq_list)
+                if grouped
+                and sociality > 1e-6
+                and feedback.group_cohesion_weight > 0.0
+                and feedback.ally_cohesion_weight > 0.0
+                and feedback.group_cohesion_radius > 1e-6
+                else ZERO
+            )
+            alignment_bias = self._alignment(agent, neighbors) if grouped and sociality > 1e-6 else ZERO
+        else:
+            personal_space_bias = ZERO
+            separation_bias = ZERO
+            intergroup_bias = ZERO
+            group_cohesion_bias = ZERO
+            alignment_bias = ZERO
+        group_seek_bias = (
+            self._group_seek_bias(agent, neighbors, neighbor_offsets, dist_sq_list)
+            if not grouped and feedback.group_seek_weight > 0.0 and feedback.group_seek_radius > 1e-6
+            else ZERO
+        )
+        base_bias = (
+            self._group_base_attraction(agent)
+            if grouped and feedback.group_base_attraction_weight > 0.0
+            else ZERO
+        )
 
         food_bias = ZERO
         pheromone_bias = _safe_normalize(pheromone_gradient) if pheromone_gradient.length_squared() > 1e-4 else ZERO
@@ -800,33 +908,69 @@ class World:
             food_bias = _safe_normalize(food_gradient) if food_gradient.length_squared() > 1e-4 else ZERO
         if needs_food:
             agent.state = AgentState.SEEKING_FOOD
-            desired = desired + food_bias * (base_speed * 0.4)
-            desired = desired + self._wander_direction(agent) * (base_speed * 0.25)
+            food_scale = base_speed * 0.4
+            desired_x += food_bias.x * food_scale
+            desired_y += food_bias.y * food_scale
+            wander = self._wander_direction(agent)
+            wander_scale = base_speed * 0.25
+            desired_x += wander.x * wander_scale
+            desired_y += wander.y * wander_scale
         elif agent.energy > species.reproduction_energy_threshold and agent.age > species.adult_age:
             agent.state = AgentState.SEEKING_MATE
-            desired = desired + self._cohesion(neighbor_offsets) * (base_speed * 0.8)
-            desired = desired + pheromone_bias * (base_speed * 0.25)
+            cohesion_all = self._cohesion(neighbor_offsets)
+            cohesion_scale = base_speed * 0.8
+            desired_x += cohesion_all.x * cohesion_scale
+            desired_y += cohesion_all.y * cohesion_scale
+            pheromone_scale = base_speed * 0.25
+            desired_x += pheromone_bias.x * pheromone_scale
+            desired_y += pheromone_bias.y * pheromone_scale
         else:
             agent.state = AgentState.WANDER
-            desired = desired + self._wander_direction(agent) * (base_speed * species.wander_jitter)
-            desired = desired + pheromone_bias * (base_speed * 0.15)
+            wander = self._wander_direction(agent)
+            wander_scale = base_speed * species.wander_jitter
+            desired_x += wander.x * wander_scale
+            desired_y += wander.y * wander_scale
+            pheromone_scale = base_speed * 0.15
+            desired_x += pheromone_bias.x * pheromone_scale
+            desired_y += pheromone_bias.y * pheromone_scale
 
-        desired = desired + personal_space_bias * (base_speed * feedback.personal_space_weight)
-        desired = desired + intergroup_bias * (base_speed * feedback.other_group_avoid_weight * territoriality)
-        desired = desired + group_seek_bias * (base_speed * feedback.group_seek_weight)
-        desired = desired + self._separation(agent, neighbors, neighbor_offsets, dist_sq_list) * (base_speed * 1.4)
-        desired = desired + self._alignment(agent, neighbors) * (base_speed * 0.3 * sociality)
-        desired = desired + group_cohesion_bias * (
-            base_speed * feedback.group_cohesion_weight * feedback.ally_cohesion_weight * sociality
-        )
-        desired = desired + base_bias * (base_speed * feedback.group_base_attraction_weight)
+        personal_scale = base_speed * feedback.personal_space_weight
+        desired_x += personal_space_bias.x * personal_scale
+        desired_y += personal_space_bias.y * personal_scale
+        intergroup_scale = base_speed * feedback.other_group_avoid_weight * territoriality
+        desired_x += intergroup_bias.x * intergroup_scale
+        desired_y += intergroup_bias.y * intergroup_scale
+        seek_scale = base_speed * feedback.group_seek_weight
+        desired_x += group_seek_bias.x * seek_scale
+        desired_y += group_seek_bias.y * seek_scale
+        separation_scale = base_speed * 1.4
+        desired_x += separation_bias.x * separation_scale
+        desired_y += separation_bias.y * separation_scale
+        alignment_scale = base_speed * 0.3 * sociality
+        desired_x += alignment_bias.x * alignment_scale
+        desired_y += alignment_bias.y * alignment_scale
+        cohesion_scale = base_speed * feedback.group_cohesion_weight * feedback.ally_cohesion_weight * sociality
+        desired_x += group_cohesion_bias.x * cohesion_scale
+        desired_y += group_cohesion_bias.y * cohesion_scale
+        base_scale = base_speed * feedback.group_base_attraction_weight
+        desired_x += base_bias.x * base_scale
+        desired_y += base_bias.y * base_scale
         boundary_bias, boundary_proximity = self._boundary_avoidance(agent.position)
-        desired = desired + boundary_bias * (base_speed * self._config.boundary_avoidance_weight)
-        if boundary_proximity > 0.0 and boundary_bias.length_squared() > 1e-8 and desired.length_squared() > 1e-8:
+        boundary_scale = base_speed * self._config.boundary_avoidance_weight
+        desired_x += boundary_bias.x * boundary_scale
+        desired_y += boundary_bias.y * boundary_scale
+        boundary_len_sq = boundary_bias.x * boundary_bias.x + boundary_bias.y * boundary_bias.y
+        desired_len_sq = desired_x * desired_x + desired_y * desired_y
+        if boundary_proximity > 0.0 and boundary_len_sq > 1e-8 and desired_len_sq > 1e-8:
             turn = min(1.0, boundary_proximity * self._config.boundary_turn_weight)
-            inward = boundary_bias * base_speed
-            desired = desired + (inward - desired) * turn
-        desired = desired - danger_bias * (base_speed * 0.2)
+            inward_x = boundary_bias.x * base_speed
+            inward_y = boundary_bias.y * base_speed
+            desired_x += (inward_x - desired_x) * turn
+            desired_y += (inward_y - desired_y) * turn
+        danger_scale = base_speed * 0.2
+        desired_x -= danger_bias.x * danger_scale
+        desired_y -= danger_bias.y * danger_scale
+        desired = Vector2(desired_x, desired_y)
         if return_sensed:
             return desired, sensed_danger
         return desired
@@ -840,37 +984,44 @@ class World:
     ) -> Vector2:
         if not neighbor_vectors:
             return ZERO
+        feedback = self._config.feedback
         dist_sq_list = neighbor_dist_sq
         if dist_sq_list is None or len(dist_sq_list) != len(neighbor_vectors):
             dist_sq_list = [offset.length_squared() for offset in neighbor_vectors]
-        accum = ZERO
+        accum_x = 0.0
+        accum_y = 0.0
         closest_dist_sq = float("inf")
-        min_sep = max(0.0, float(self._config.feedback.min_separation_distance))
+        min_sep = max(0.0, float(feedback.min_separation_distance))
         min_sep_sq = min_sep * min_sep
-        min_sep_weight = max(0.0, float(self._config.feedback.min_separation_weight))
+        min_sep_weight = max(0.0, float(feedback.min_separation_weight))
+        ally_weight = float(feedback.ally_separation_weight)
+        other_weight = float(feedback.other_group_separation_weight)
         for other, offset, raw_dist_sq in zip(neighbors, neighbor_vectors, dist_sq_list):
             if raw_dist_sq < closest_dist_sq:
                 closest_dist_sq = raw_dist_sq
             dist_sq = max(raw_dist_sq, 0.1)
             same_group = agent.group_id != self._UNGROUPED and other.group_id == agent.group_id
-            weight = (
-                self._config.feedback.ally_separation_weight
-                if same_group
-                else self._config.feedback.other_group_separation_weight
-            )
-            accum = accum - (offset / dist_sq) * weight
+            weight = ally_weight if same_group else other_weight
+            inv_dist_sq = 1.0 / dist_sq
+            accum_x -= offset.x * inv_dist_sq * weight
+            accum_y -= offset.y * inv_dist_sq * weight
             if min_sep_weight > 0.0 and min_sep_sq > 1e-12 and raw_dist_sq > 1e-12 and raw_dist_sq < min_sep_sq:
                 strength = (min_sep_sq - raw_dist_sq) / min_sep_sq
                 strength = max(0.0, min(1.0, strength))
-                accum = accum - _safe_normalize(offset) * (strength * strength) * min_sep_weight
-        if accum.length_squared() < 1e-12:
+                dist = math.sqrt(raw_dist_sq)
+                inv_len = 1.0 / dist
+                scale = (strength * strength) * min_sep_weight
+                accum_x -= offset.x * inv_len * scale
+                accum_y -= offset.y * inv_len * scale
+        if accum_x * accum_x + accum_y * accum_y < 1e-12:
             return ZERO
         if closest_dist_sq < float("inf") and closest_dist_sq > 1e-12 and min_sep > 1e-6:
             closest = math.sqrt(closest_dist_sq)
             if closest < min_sep:
                 scale = min(4.0, max(1.0, min_sep / max(closest, 1e-4)))
-                accum = accum * scale
-        return _clamp_length(accum, 3.5)
+                accum_x *= scale
+                accum_y *= scale
+        return _clamp_length_xy(accum_x, accum_y, 3.5)
 
     def _resolve_overlap(
         self, position: Vector2, neighbor_offsets: List[Vector2], neighbor_dist_sq: List[float] | None = None
@@ -882,7 +1033,8 @@ class World:
         if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
             dist_sq_list = [offset.length_squared() for offset in neighbor_offsets]
         min_sep_sq = min_sep * min_sep
-        correction = ZERO
+        correction_x = 0.0
+        correction_y = 0.0
         count = 0
         for offset, dist_sq in zip(neighbor_offsets, dist_sq_list):
             if dist_sq <= 1e-12 or dist_sq >= min_sep_sq:
@@ -891,27 +1043,35 @@ class World:
             overlap = min_sep - dist
             if overlap <= 0.0:
                 continue
-            correction = correction - _safe_normalize(offset) * overlap
+            inv_len = 1.0 / dist
+            correction_x -= offset.x * inv_len * overlap
+            correction_y -= offset.y * inv_len * overlap
             count += 1
         if count == 0:
             return position
-        correction = correction / count
-        correction = _clamp_length(correction, min_sep * 0.5)
+        inv = 1.0 / count
+        correction_x *= inv
+        correction_y *= inv
+        correction = _clamp_length_xy(correction_x, correction_y, min_sep * 0.5)
         return position + correction
 
     def _alignment(self, agent: Agent, neighbors: List[Agent]) -> Vector2:
         if agent.group_id == self._UNGROUPED:
             return ZERO
-        accum = ZERO
+        sum_x = 0.0
+        sum_y = 0.0
         count = 0
         for other in neighbors:
             if other.group_id != agent.group_id:
                 continue
-            accum = accum + other.velocity
+            velocity = other.velocity
+            sum_x += velocity.x
+            sum_y += velocity.y
             count += 1
         if count == 0:
             return ZERO
-        return _safe_normalize(accum / count)
+        inv = 1.0 / count
+        return _safe_normalize_xy(sum_x * inv, sum_y * inv)
 
     def _group_seek_bias(
         self,
@@ -922,47 +1082,61 @@ class World:
     ) -> Vector2:
         if agent.group_id != self._UNGROUPED:
             return ZERO
-        radius = max(0.0, float(self._config.feedback.group_seek_radius))
+        feedback = self._config.feedback
+        radius = max(0.0, float(feedback.group_seek_radius))
         if radius <= 1e-6:
             return ZERO
         radius_sq = radius * radius
-        accum = ZERO
+        accum_x = 0.0
+        accum_y = 0.0
         weight_sum = 0.0
-        base_bias = ZERO
+        base_bias_x = 0.0
+        base_bias_y = 0.0
         dist_sq_list = neighbor_dist_sq
         if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
             dist_sq_list = [offset.length_squared() for offset in neighbor_offsets]
         if self._group_bases:
-            nearest_offset: Optional[Vector2] = None
+            nearest_dx = 0.0
+            nearest_dy = 0.0
             nearest_dist_sq = radius_sq
             for base in self._group_bases.values():
-                offset = base - agent.position
-                dist_sq = offset.length_squared()
+                dx = base.x - agent.position.x
+                dy = base.y - agent.position.y
+                dist_sq = dx * dx + dy * dy
                 if dist_sq <= 1e-12 or dist_sq > radius_sq:
                     continue
-                if nearest_offset is None or dist_sq < nearest_dist_sq:
-                    nearest_offset = offset
+                if dist_sq < nearest_dist_sq:
+                    nearest_dx = dx
+                    nearest_dy = dy
                     nearest_dist_sq = dist_sq
-            if nearest_offset is not None:
-                falloff = 1.0 - min(1.0, math.sqrt(nearest_dist_sq) / radius)
-                if falloff > 1e-6:
-                    base_bias = _safe_normalize(nearest_offset) * falloff
+            if nearest_dist_sq < radius_sq:
+                dist = math.sqrt(nearest_dist_sq)
+                falloff = 1.0 - min(1.0, dist / radius)
+                if falloff > 1e-6 and dist > 1e-12:
+                    inv_len = 1.0 / dist
+                    base_bias_x = nearest_dx * inv_len * falloff
+                    base_bias_y = nearest_dy * inv_len * falloff
         for other, offset, dist_sq in zip(neighbors, neighbor_offsets, dist_sq_list):
             if other.group_id == self._UNGROUPED:
                 continue
             if dist_sq <= 1e-12 or dist_sq > radius_sq:
                 continue
-            falloff = 1.0 - min(1.0, math.sqrt(dist_sq) / radius)
+            dist = math.sqrt(dist_sq)
+            falloff = 1.0 - min(1.0, dist / radius)
             if falloff <= 1e-5:
                 continue
-            accum = accum + offset * falloff
+            accum_x += offset.x * falloff
+            accum_y += offset.y * falloff
             weight_sum += falloff
         if weight_sum <= 1e-6:
-            return _safe_normalize(base_bias)
-        blended = accum / weight_sum
-        if base_bias.length_squared() > 1e-12:
-            blended = blended + base_bias
-        return _safe_normalize(blended)
+            return _safe_normalize_xy(base_bias_x, base_bias_y)
+        inv = 1.0 / weight_sum
+        blended_x = accum_x * inv
+        blended_y = accum_y * inv
+        if base_bias_x * base_bias_x + base_bias_y * base_bias_y > 1e-12:
+            blended_x += base_bias_x
+            blended_y += base_bias_y
+        return _safe_normalize_xy(blended_x, blended_y)
 
     def _group_cohesion(
         self,
@@ -973,8 +1147,10 @@ class World:
     ) -> Vector2:
         if agent.group_id == self._UNGROUPED:
             return ZERO
-        cohesion_radius_sq = self._config.feedback.group_cohesion_radius * self._config.feedback.group_cohesion_radius
-        accum = ZERO
+        feedback = self._config.feedback
+        cohesion_radius_sq = feedback.group_cohesion_radius * feedback.group_cohesion_radius
+        sum_x = 0.0
+        sum_y = 0.0
         count = 0
         dist_sq_list = neighbor_dist_sq
         if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
@@ -984,11 +1160,13 @@ class World:
                 continue
             if dist_sq > cohesion_radius_sq:
                 continue
-            accum = accum + offset
+            sum_x += offset.x
+            sum_y += offset.y
             count += 1
         if count == 0:
             return ZERO
-        return _safe_normalize(accum / count)
+        inv = 1.0 / count
+        return _safe_normalize_xy(sum_x * inv, sum_y * inv)
 
     def _group_base_attraction(self, agent: Agent) -> Vector2:
         if agent.group_id == self._UNGROUPED:
@@ -996,15 +1174,16 @@ class World:
         base = self._group_bases.get(agent.group_id)
         if base is None:
             return ZERO
+        feedback = self._config.feedback
         to_base = base - agent.position
         dist_sq = to_base.length_squared()
         if dist_sq <= 1e-12:
             return ZERO
-        dead_zone = max(0.0, float(self._config.feedback.group_base_dead_zone))
+        dead_zone = max(0.0, float(feedback.group_base_dead_zone))
         dead_sq = dead_zone * dead_zone
         if dist_sq <= dead_sq:
             return ZERO
-        soft_radius = max(dead_zone, float(self._config.feedback.group_base_soft_radius))
+        soft_radius = max(dead_zone, float(feedback.group_base_soft_radius))
         soft_sq = soft_radius * soft_radius
         strength = 1.0
         if soft_radius > dead_zone and dist_sq < soft_sq:
@@ -1017,25 +1196,32 @@ class World:
     def _personal_space(
         self, neighbor_offsets: List[Vector2], neighbor_dist_sq: List[float] | None = None
     ) -> Vector2:
-        radius = self._config.feedback.personal_space_radius
+        feedback = self._config.feedback
+        radius = feedback.personal_space_radius
         if radius <= 1e-6 or not neighbor_offsets:
             return ZERO
         radius_sq = radius * radius
         dist_sq_list = neighbor_dist_sq
         if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
             dist_sq_list = [offset.length_squared() for offset in neighbor_offsets]
-        accum = ZERO
+        accum_x = 0.0
+        accum_y = 0.0
         count = 0
         for offset, dist_sq in zip(neighbor_offsets, dist_sq_list):
             if dist_sq <= 1e-9 or dist_sq > radius_sq:
                 continue
             dist = math.sqrt(dist_sq)
+            if dist <= 1e-12:
+                continue
             strength = 1.0 - min(1.0, dist / radius)
-            accum = accum - _safe_normalize(offset) * strength
+            inv_len = 1.0 / dist
+            accum_x -= offset.x * inv_len * strength
+            accum_y -= offset.y * inv_len * strength
             count += 1
         if count == 0:
             return ZERO
-        return _safe_normalize(accum / count)
+        inv = 1.0 / count
+        return _safe_normalize_xy(accum_x * inv, accum_y * inv)
 
     def _intergroup_avoidance(
         self,
@@ -1044,14 +1230,16 @@ class World:
         neighbor_offsets: List[Vector2],
         neighbor_dist_sq: List[float] | None = None,
     ) -> Vector2:
-        radius = self._config.feedback.other_group_avoid_radius
+        feedback = self._config.feedback
+        radius = feedback.other_group_avoid_radius
         if radius <= 1e-6:
             return ZERO
         radius_sq = radius * radius
         dist_sq_list = neighbor_dist_sq
         if dist_sq_list is None or len(dist_sq_list) != len(neighbor_offsets):
             dist_sq_list = [offset.length_squared() for offset in neighbor_offsets]
-        accum = ZERO
+        accum_x = 0.0
+        accum_y = 0.0
         count = 0
         for other, offset, dist_sq in zip(neighbors, neighbor_offsets, dist_sq_list):
             if agent.group_id == self._UNGROUPED or other.group_id == self._UNGROUPED:
@@ -1060,14 +1248,20 @@ class World:
                 continue
             if dist_sq <= 1e-9 or dist_sq > radius_sq:
                 continue
-            falloff = 1.0 - min(1.0, math.sqrt(dist_sq) / radius)
+            dist = math.sqrt(dist_sq)
+            if dist <= 1e-12:
+                continue
+            falloff = 1.0 - min(1.0, dist / radius)
             if falloff <= 1e-5:
                 continue
-            accum = accum - _safe_normalize(offset) * falloff
+            inv_len = 1.0 / dist
+            accum_x -= offset.x * inv_len * falloff
+            accum_y -= offset.y * inv_len * falloff
             count += 1
         if count == 0:
             return ZERO
-        return _safe_normalize(accum / count)
+        inv = 1.0 / count
+        return _safe_normalize_xy(accum_x * inv, accum_y * inv)
 
     def _wander_direction(self, agent: Agent) -> Vector2:
         refresh = max(1e-4, self._config.species.wander_refresh_seconds)
@@ -1083,38 +1277,49 @@ class World:
         size = self._config.world_size
         if margin <= 1e-6 or size <= 0.0:
             return ZERO, 0.0
+        x = position.x
+        y = position.y
+        if margin <= x <= size - margin and margin <= y <= size - margin:
+            return ZERO, 0.0
 
-        push = Vector2()
-        if position.x < margin:
-            push.x += 1.0 - (position.x / margin)
-        elif position.x > size - margin:
-            push.x -= 1.0 - ((size - position.x) / margin)
-        if position.y < margin:
-            push.y += 1.0 - (position.y / margin)
-        elif position.y > size - margin:
-            push.y -= 1.0 - ((size - position.y) / margin)
+        push_x = 0.0
+        push_y = 0.0
+        if x < margin:
+            push_x += 1.0 - (x / margin)
+        elif x > size - margin:
+            push_x -= 1.0 - ((size - x) / margin)
+        if y < margin:
+            push_y += 1.0 - (y / margin)
+        elif y > size - margin:
+            push_y -= 1.0 - ((size - y) / margin)
 
-        proximity_x = 0.0
-        proximity_y = 0.0
-        proximity_x = max(0.0, 1.0 - min(position.x, size - position.x) / margin)
-        proximity_y = max(0.0, 1.0 - min(position.y, size - position.y) / margin)
+        proximity_x = 1.0 - min(x, size - x) / margin
+        proximity_y = 1.0 - min(y, size - y) / margin
+        if proximity_x < 0.0:
+            proximity_x = 0.0
+        if proximity_y < 0.0:
+            proximity_y = 0.0
         proximity = min(1.0, max(proximity_x, proximity_y))
 
-        if push.length_squared() < 1e-8 or proximity <= 0.0:
+        push_len_sq = push_x * push_x + push_y * push_y
+        if push_len_sq < 1e-8 or proximity <= 0.0:
             return ZERO, 0.0
 
         strength = proximity * (0.4 + 0.6 * proximity)
-        return _safe_normalize(push) * strength, proximity
+        inv_len = 1.0 / math.sqrt(push_len_sq)
+        return Vector2(push_x * inv_len * strength, push_y * inv_len * strength), proximity
 
     @staticmethod
     def _cohesion(neighbor_vectors: List[Vector2]) -> Vector2:
         if not neighbor_vectors:
             return ZERO
-        center = ZERO
+        sum_x = 0.0
+        sum_y = 0.0
         for offset in neighbor_vectors:
-            center = center + offset
-        center = center / len(neighbor_vectors)
-        return _safe_normalize(center)
+            sum_x += offset.x
+            sum_y += offset.y
+        inv = 1.0 / len(neighbor_vectors)
+        return _safe_normalize_xy(sum_x * inv, sum_y * inv)
 
     def _clamp_position(self, position: Vector2) -> Vector2:
         size = self._config.world_size
@@ -1301,7 +1506,9 @@ class World:
                     state=AgentState.WANDER,
                     lineage_id=child_lineage,
                     traits=child_traits,
+                    traits_dirty=False,
                     group_cooldown=child_cooldown,
+                    last_desired=child_velocity.copy(),
                 )
                 self._next_id += 1
                 self._birth_queue.append(child)

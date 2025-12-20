@@ -2019,3 +2019,23 @@ def test_group_split_probability_scales_with_local_size():
     world.step(0)
 
     assert world.agents[0].group_id not in (world._UNGROUPED, 0)
+
+
+def test_steering_stride_reuses_last_desired():
+    config = make_static_config(seed=7)
+    config.initial_population = 2
+    config.species.base_speed = 2.0
+    config.species.max_acceleration = 6.0
+    config.species.vision_radius = 3.0
+    config.species.wander_jitter = 0.6
+    config.feedback.steering_update_population_threshold = 0
+    config.feedback.steering_update_stride = 2
+    world = World(config)
+    world.step(0)
+    agent0 = world.agents[0]
+    last0 = (agent0.last_desired.x, agent0.last_desired.y)
+    world.step(1)
+    agent0_next = world.agents[0]
+    assert agent0_next.last_desired.x == approx(last0[0])
+    assert agent0_next.last_desired.y == approx(last0[1])
+

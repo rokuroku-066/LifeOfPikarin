@@ -55,8 +55,10 @@
    * 近距離仲間数で孤立時間を積算し、一定時間で離脱 or 乗り換え or 新規グループ生成。
    * 未所属は近傍多数派や既存ベース（拠点）への吸引で採用を試みる。
    * 近傍が多い既存グループは確率で分裂し、新グループへ近傍をリクルート。
+   * Group membership updates can be time-sliced at high population using `feedback.group_update_population_threshold` and `feedback.group_update_stride` (deterministic by tick and agent id) to keep tick time stable.
 4. **Steering/状態決定**（`_compute_desired_velocity`）:
    * 危険場 or 他グループ至近距離で逃走（FLEE）。
+   * ????? `feedback.steering_update_population_threshold` ? `feedback.steering_update_stride` ? Steering ??????????????? desired ??????
    * 空腹/豊富な食料セルでは食料勾配＋ワンダーに重み付け。繁殖条件を満たすと近傍 Cohesion とフェロモンを優先。通常は Wander＋フェロモン軽視覚。
    * 常時適用: 個人空間・最小分離・同盟/他グループ分離、グループ Cohesion/基点吸引、未所属のグループ探索、境界回避、他グループ回避半径の押し返し、危険場からの微弱回避。
    * 加速度・速度をクランプし、反射壁で位置/速度を補正。
