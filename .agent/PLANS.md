@@ -22,6 +22,12 @@ For small, single-file, obviously-scoped edits, you may proceed without an ExecP
 
 ---
 
+## Where ExecPlans must live
+- Store every ExecPlan under `.agent/plans/`. Active plans can live directly in that folder; completed or superseded plans belong under `.agent/plans/archive/`.
+- Do not place ExecPlans under `.agent/`, `docs/execplans/`, or other directories.
+
+---
+
 ## Non‑negotiable requirements for every ExecPlan
 1) Self-contained: In its current form, it contains all knowledge and instructions needed for a novice to succeed.
 2) Living document: It MUST be updated as progress is made, discoveries occur, and decisions are finalized.

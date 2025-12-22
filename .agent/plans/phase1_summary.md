@@ -1,5 +1,5 @@
-# Phase 1 ExecPlan Summary (through 2025-12-15)
-- All ExecPlans through Phase 1 have been moved to `.agent/plans/archive/`.
+# Phase 1 ExecPlan Summary (through 2025-12-20)
+- All ExecPlans are stored under `.agent/plans/archive/`; no active ExecPlans remain outside the archive, and December 2025 performance/metrics updates are included.
 
 ## Chronological work log
 - 2024-05-05: Phase 2 snapshot signals prework. Added heading/metadata to snapshots without changing the loop; ran pytest.
@@ -12,6 +12,7 @@
 - 2025-02-12: Extracted viewer color calc to `computeGroupHue`, added Node built-in tests, documented `test:js` in README.
 - 2025-02-17: Implemented group isolation hysteresis and switching. Added loneliness accumulator, majority switch, and cohesion steering; verified with pytest.
 - 2025-05-03: Removed legacy C#/Unity and made the repo Python-only. Cleaned README/deps; pytest green.
+- 2025-05-10: Trimmed allocations in spatial grid insert/clear, environment diffusion, and neighbor distance reuse to keep deterministic performance; pytest revalidated.
 - 2025-05-18: Fixed World.Reset to rebuild environment/RNG for seed reproducibility (full_implementation follow-up).
 - 2025-12-10: Full_implementation finishing touches (vision-radius filter, scratch reuse, removed TickDuration from deterministic compares, headless runner/CSV). C#9 compat tests passed. In remaining_tasks ran a 3000-tick smoke (p95 6.77 ms, births/deaths continue) and synced Unity DTOs. population_stability advanced first births by tuning initial energy/repro/density+age hazards.
 - 2025-12-10: Ported environment_field_diffusion to Python; wired food/pheromone/danger diffusion/decay order into World.step; ran tests.
@@ -35,6 +36,11 @@
 - 2025-12-14: Baseline pytest recorded ahead of removing the unused danger field system.
 - 2025-12-14: Final Phase 1 cleanup—added neighbor-threshold guard for group switching, cross-platform `npm run test:js`, pheromone pruning regression test, README/DESIGN parameter updates, ExecPlan outcomes, and a 20k-tick headless run (seed 42) logged to `artifacts/headless_20000.csv` (pop_final 499, groups_final 46, tick_ms_mean 28.9, p95 55.3).
 - 2025-12-15: Added a deterministic 5000-tick regression test with tuned configs (caps, neighbor radius, environment cadence, group dynamics) to hold peak population at 400–500, keep 5–10 groups, and keep average tick_duration_ms under 25 ms.
+- 2025-12-18: Shifted population control to food scarcity by removing global population pressure and group-food spawning, adding reproduction base chance, and capping groups for stable waves; pytest run completed.
+- 2025-12-19: Brought average tick_ms under 20 by slicing group updates at high population, clamping traits once per agent, and cutting allocations while preserving determinism; tests updated and re-run.
+- 2025-12-20: Enriched headless smoke-run metrics with detailed CSV/JSON outputs while keeping Sim/View separation intact; pytest verified.
+- 2025-12-20: Tried single-pass neighbor aggregation, reverted after regressions, and instead optimized boundary avoidance/danger caching to keep tick_ms ~20 while retaining stable populations.
+- 2025-12-20: Added steering stride and bias gating to reuse desired vectors on skipped ticks, cutting tick_ms to ~14 on 5k runs; documented behavioral impacts and tested.
 
 ## Issues encountered and fixes
 - Missing dotnet SDK blocked tests -> installed .NET 8.416 on Windows and reran SimTests.
@@ -47,6 +53,11 @@
 - `npm run test:js` path failed on Windows -> use `node --test .\\tests\\js\\*.js` as a workaround.
 - PowerShell Add-Type couldn't load net8 DLL for smoke run -> used SimRunner/headless CLI to log 3000 ticks.
 - Environment diffusion ran every tick and was heavy -> added `environment_tick_interval` to throttle and improved timings.
+- SpatialGrid clear/insert left stale buckets and repeated length calls -> fixed active-key tracking and reused neighbor distances to cut allocations while keeping determinism.
+- Single-pass neighbor aggregation increased tick_ms in 5k smoke runs -> reverted aggregation and kept lighter boundary/danger caching optimizations instead.
+- Steering stride and bias gating reduced tick_ms but raised population peaks -> retained stride with documented monitoring and regression tests.
+- Removing global population pressure caused runaway growth until food scarcity and group caps were retuned -> added reproduction base chance and removed group-food spawning to stabilize waves.
+- Headless smoke-run CSV lacked detail for perf triage -> added detailed metrics/JSON summaries and compatible log formats to keep Sim/View separation intact.
 
 ## Unresolved items
 - None for Phase 1 (cube scope).
