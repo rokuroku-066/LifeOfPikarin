@@ -75,7 +75,7 @@
 Python 製のヘッドレスランナーでステップ単位のシミュレーションを回し、CSV にメトリクスを書き出します。
 
 ```bash
-python -m terrarium.headless --steps 5000 --seed 42 --log artifacts/metrics_smoke.csv --log-format detailed --summary artifacts/metrics_smoke_summary.json
+python -m terrarium.headless --steps 5000 --seed 42 --log tests/artifacts/metrics_smoke.csv --log-format detailed --summary tests/artifacts/metrics_smoke_summary.json
 ```
 
 決定論的な CSV（同じ seed で 2 回回したときに完全一致させたい）を取りたい場合は `--deterministic-log` を付けてください。`tick_ms` は 0.000 に固定され、残りの値が同一 seed で一致します。
