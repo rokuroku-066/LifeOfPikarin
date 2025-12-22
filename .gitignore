@@ -64,6 +64,9 @@ SysInfo.txt
 # Unity asset store tools
 Assets/AssetStoreTools*
 
+# ExecPlan location enforcement
+docs/execplans/
+
 # Package manager cache
 Packages/com.unity.package-manager-ui/Cache/
 Packages/com.unity.package-manager-ui/Downloads/
@@ -91,4 +94,3 @@ CrashReports/
 # Generated project files
 *.unityproj
 *.sln.iml
-
