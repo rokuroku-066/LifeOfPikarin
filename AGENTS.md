@@ -1,9 +1,14 @@
 # AGENTS.md
 
-## Project: Long-run Terrarium (Cube Phase) — Visual Alife Sandbox
+## Project: Long-run Terrarium — Visual Alife Sandbox
 
 This repository aims to build a long-running, overhead-camera terrarium simulation for a visual art piece.
-Phase 1 renders agents as cubes (GPU instancing) while the simulation runs deterministically and stably for long observation.
+
+**Current focus: Phase 2 (Pikarin Viewer Refresh)**
+- Keep the Phase 1 simulation core intact and deterministic.
+- Replace cube rendering with a **static Pikarin GLB** drawn via **GPU instancing** (Body + Face meshes).
+- Add a **floor + two-wall** corner diorama background and a **single fixed oblique camera** (no controls).
+- Continue to stream simulation snapshots over WebSocket and interpolate only on the View side.
 
 Codex: Read this file before doing any work and follow it as default working agreements.
 
@@ -40,17 +45,20 @@ Codex: Read this file before doing any work and follow it as default working agr
 
 ---
 
-## Phase 1 scope (Cube implementation only)
-- Visuals: cubes only, rendered with GPU instancing (no per-agent GameObject spam).
-- No FBX rigs/Animator complexity in Phase 1.
-- Focus: simulation correctness, performance, long-run stability, and visually legible emergent group behaviors.
+## Phase 2 scope (Pikarin viewer)
+- Viewer replaces cubes with **`static/assets/pikarin.glb`** (Body uses instance colors; Face keeps its texture).
+- Background: **floor + two textured walls** (`static/assets/ground.png`, `wall_back.png`, `wall_side.png`).
+- Camera: **single fixed perspective** looking at the world origin (no OrbitControls/POV cameras/scissor views).
+- Instancing: allocate up to **700 instances** for Body/Face meshes; set `mesh.count` from population.
+- Coordinate mapping: `(x_view, z_view) = (agent.x - halfWorld, agent.y - halfWorld)`, `y_view = 0`; yaw derives from `heading` plus any model offset.
+- Lighting: ambient + directional only; **shadows off** for Phase 2.
+- Keep all simulation rules and determinism unchanged; the View must never drive or delay the Sim.
 
 ---
 
 ## Repository orientation (expected docs & structure)
-- The system design lives in: `docs/DESIGN.md`
-  - When implementing anything, align with `docs/DESIGN.md`.
-  - If a plan needs context from the design, restate the necessary parts in the plan (do not assume the reader remembers the design doc).
+- The system design lives in: `docs/DESIGN.md` and the Phase 2 viewer spec in `docs/DESIGN_PHASE2.md`.
+  - When implementing anything, align with these docs and restate the necessary context in plans/PRs.
 
 Recommended (but not mandatory) code layout:
 - `src/terrarium/` : simulation core, FastAPI server, and static web viewer assets (Python-only)
@@ -78,7 +86,7 @@ When acting as Codex in this repo:
 
 ---
 
-## Validation expectations (Phase 1)
+## Validation expectations (Sim baseline + Phase 2 viewer)
 Every meaningful change must come with a way to verify:
 - A deterministic “smoke run” for N steps (headless or in-editor) that logs:
   - population count,
@@ -90,6 +98,10 @@ Every meaningful change must come with a way to verify:
   - the terrarium runs for an extended period without obvious numerical blowups,
   - agents move smoothly (View interpolation is fine),
   - group formation and splitting are visually legible from an overhead camera.
+- Phase 2 viewer specifics (see `docs/DESIGN_PHASE2.md`):
+  - GLB (`static/assets/pikarin.glb`) loads; face stays textured while body color varies.
+  - Floor + two walls render with their textures, and the fixed oblique camera frames the corner.
+  - Instancing shows 200+ agents smoothly, and survives up to `max_population=700` without crashes.
 
 If you cannot run the web viewer in the current environment, prioritize:
 - unit tests for the simulation core,
@@ -98,12 +110,13 @@ If you cannot run the web viewer in the current environment, prioritize:
 
 ---
 
-## Performance expectations (Phase 1)
+## Performance expectations (Sim baseline; still applies in Phase 2)
 - Avoid per-tick allocations in tight loops.
 - Avoid LINQ in per-agent loops.
 - Use preallocated buffers where possible.
 - Keep per-agent data compact and contiguous (arrays/structs preferred).
 - Record basic performance counters (tick time, neighbor checks, etc.) so regressions can be caught early.
+- Viewer additions should remain GPU-instanced (Body/Face) and avoid per-frame allocations beyond transforms/color buffers.
 
 ## Mandatory test execution for any modification
 To keep the Python simulation stable, **you must run the Python unit tests for every change (no exceptions)**:
