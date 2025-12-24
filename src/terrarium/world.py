@@ -45,6 +45,19 @@ def _clamp_length_xy(x: float, y: float, max_length: float) -> Vector2:
     return Vector2(x * inv, y * inv)
 
 
+def _clamp_length_xy_f(x: float, y: float, max_length: float) -> tuple[float, float]:
+    if max_length <= 0.0:
+        return 0.0, 0.0
+    magnitude_sq = x * x + y * y
+    max_sq = max_length * max_length
+    if magnitude_sq <= max_sq:
+        return x, y
+    if magnitude_sq <= 1e-18:
+        return 0.0, 0.0
+    inv = max_length / math.sqrt(magnitude_sq)
+    return x * inv, y * inv
+
+
 def _clamp_length(vector: Vector2, max_length: float) -> Vector2:
     if max_length <= 0:
         return Vector2()
@@ -66,7 +79,7 @@ def _clamp_value(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(max_value, value))
 
 
-@dataclass
+@dataclass(slots=True)
 class TickMetrics:
     tick: int
     population: int
@@ -80,7 +93,7 @@ class TickMetrics:
     tick_duration_ms: float = 0.0
 
 
-@dataclass
+@dataclass(slots=True)
 class Snapshot:
     tick: int
     metrics: TickMetrics
@@ -90,12 +103,12 @@ class Snapshot:
     fields: "SnapshotFields"
 
 
-@dataclass
+@dataclass(slots=True)
 class SnapshotWorld:
     size: float
 
 
-@dataclass
+@dataclass(slots=True)
 class SnapshotMetadata:
     world_size: float
     sim_dt: float
@@ -104,7 +117,7 @@ class SnapshotMetadata:
     config_version: str
 
 
-@dataclass
+@dataclass(slots=True)
 class SnapshotFields:
     food: Dict[str, Any]
     pheromones: Dict[str, Any]
@@ -126,9 +139,9 @@ class World:
         self._neighbor_agents: List[Agent] = []
         self._neighbor_dist_sq: List[float] = []
         self._group_scratch: Set[int] = set()
-        self._pending_food: List[tuple[Vector2, float]] = []
-        self._pending_danger: List[tuple[Vector2, float]] = []
-        self._pending_pheromone: List[tuple[Vector2, int, float]] = []
+        self._pending_food: Dict[tuple[int, int], float] = {}
+        self._pending_danger: Dict[tuple[int, int], float] = {}
+        self._pending_pheromone: Dict[tuple[tuple[int, int], int], float] = {}
         self._ungrouped_neighbors: List[Agent] = []
         self._group_counts_scratch: Dict[int, int] = {}
         self._group_lineage_counts: Dict[int, int] = {}
@@ -138,7 +151,7 @@ class World:
         self._next_id = 0
         self._next_group_id = 0
         self._max_population_seen = 0
-        self._metrics: List[TickMetrics] = []
+        self._metrics: TickMetrics | None = None
         self._environment_accumulator = 0.0
         self._food_regen_noise_multiplier = 1.0
         self._food_regen_noise_target = 1.0
@@ -153,7 +166,7 @@ class World:
         return self._agents
 
     @property
-    def metrics(self) -> List[TickMetrics]:
+    def metrics(self) -> TickMetrics | None:
         return self._metrics
 
     def reset(self) -> None:
@@ -175,7 +188,7 @@ class World:
         self._climate_rng.reset()
         self._next_lineage_id = 0
         self._id_to_index.clear()
-        self._metrics.clear()
+        self._metrics = None
         self._next_id = 0
         self._next_group_id = 0
         self._max_population_seen = 0
@@ -236,13 +249,11 @@ class World:
         group_ids = self._group_scratch
         group_ids.clear()
         danger_present = self._environment.has_danger()
-        danger_present = self._environment.has_danger()
 
         for agent in self._agents:
             if not agent.alive:
                 continue
 
-            original_group = agent.group_id
             if agent.traits_dirty:
                 traits = self._clamp_traits(agent.traits)
                 agent.traits_dirty = False
@@ -259,7 +270,8 @@ class World:
                 exclude_id=agent.id,
                 out_dist_sq=self._neighbor_dist_sq,
             )
-            neighbor_checks += len(self._neighbor_agents)
+            neighbor_count = len(self._neighbor_agents)
+            neighbor_checks += neighbor_count
             neighbor_dist_sq = self._neighbor_dist_sq
             if use_group_stride and (tick + agent.id) % group_update_stride != 0:
                 same_group_neighbors = 0
@@ -290,6 +302,7 @@ class World:
 
             steering_update = not use_steering_stride or (tick + agent.id) % steering_stride == 0
             if steering_update:
+                base_cell_key = self._cell_key(agent.position)
                 desired, sensed_danger = self._compute_desired_velocity(
                     agent,
                     self._neighbor_agents,
@@ -299,24 +312,36 @@ class World:
                     neighbor_dist_sq=neighbor_dist_sq,
                     traits=traits,
                     danger_present=danger_present,
+                    base_cell_key=base_cell_key,
                 )
                 agent.last_desired = desired
                 agent.last_sensed_danger = sensed_danger
             else:
                 desired = agent.last_desired
                 sensed_danger = agent.last_sensed_danger
-            accel = desired - agent.velocity
-            accel = _clamp_length(accel, species.max_acceleration)
-            agent.velocity = _clamp_length(agent.velocity + accel * dt, speed_limit)
-            new_position = agent.position + agent.velocity * dt
+            accel_x = desired.x - agent.velocity.x
+            accel_y = desired.y - agent.velocity.y
+            accel_x, accel_y = _clamp_length_xy_f(accel_x, accel_y, species.max_acceleration)
+            vel_x = agent.velocity.x + accel_x * dt
+            vel_y = agent.velocity.y + accel_y * dt
+            vel_x, vel_y = _clamp_length_xy_f(vel_x, vel_y, speed_limit)
+            agent.velocity.update(vel_x, vel_y)
+            new_position = Vector2(
+                agent.position.x + vel_x * dt,
+                agent.position.y + vel_y * dt,
+            )
             new_position = self._resolve_overlap(new_position, self._neighbor_offsets, neighbor_dist_sq)
-            agent.position, agent.velocity = self._reflect(new_position, agent.velocity, config.world_size)
+            reflected_position, reflected_velocity = self._reflect(
+                new_position, agent.velocity, config.world_size
+            )
+            agent.position = reflected_position
+            agent.velocity.update(reflected_velocity)
             self._update_heading(agent)
             agent.age += dt
 
             births += self._apply_life_cycle(
                 agent,
-                len(self._neighbor_agents),
+                neighbor_count,
                 same_group_neighbors,
                 can_form_groups,
                 current_population,
@@ -324,7 +349,12 @@ class World:
                 traits=traits,
             )
             if agent.state == AgentState.FLEE or sensed_danger:
-                self._pending_danger.append((agent.position, self._config.environment.danger_pulse_on_flee))
+                danger_key = self._cell_key(agent.position)
+                pending_danger = self._pending_danger
+                pending_danger[danger_key] = (
+                    pending_danger.get(danger_key, 0.0)
+                    + self._config.environment.danger_pulse_on_flee
+                )
             if agent.alive:
                 population += 1
                 energy_sum += agent.energy
@@ -345,7 +375,7 @@ class World:
                     group_ids.add(born.group_id)
         self._apply_births()
         deaths += self._remove_dead()
-        active_groups = self._active_group_ids()
+        active_groups = group_ids
         self._prune_group_bases(active_groups)
         self._apply_field_events()
         self._tick_environment(active_groups)
@@ -353,11 +383,11 @@ class World:
         elapsed_ms = (perf_counter() - start) * 1000.0
         stats = self._update_cached_population_stats(population, energy_sum, age_sum, group_ids, ungrouped)
         metrics = self._create_metrics(tick, births, deaths, neighbor_checks, elapsed_ms, stats)
-        self._metrics.append(metrics)
+        self._metrics = metrics
         return metrics
 
     def snapshot(self, tick: int) -> Snapshot:
-        metrics = self._metrics[-1] if self._metrics else self._snapshot_metrics_from_state(tick)
+        metrics = self._metrics if self._metrics is not None else self._snapshot_metrics_from_state(tick)
         agents_payload = [self._agent_snapshot(agent) for agent in self._agents if agent.alive]
         metadata = SnapshotMetadata(
             world_size=self._config.world_size,
@@ -798,6 +828,7 @@ class World:
         neighbor_dist_sq: List[float] | None = None,
         traits: AgentTraits | None = None,
         danger_present: bool | None = None,
+        base_cell_key: tuple[int, int] | None = None,
     ) -> tuple[Vector2, bool] | Vector2:
         desired_x = 0.0
         desired_y = 0.0
@@ -818,18 +849,22 @@ class World:
 
         if danger_present is None:
             danger_present = self._environment.has_danger()
+        if base_cell_key is None:
+            base_cell_key = self._cell_key(agent.position)
         danger_level = 0.0
         danger_gradient = Vector2()
         if danger_present:
-            danger_level = self._environment.sample_danger(agent.position)
-            danger_gradient = self._danger_gradient(agent.position)
+            danger_level = self._environment.sample_danger(base_cell_key)
+            danger_gradient = self._danger_gradient(agent.position, base_cell_key)
         if danger_level > 0.1:
             sensed_danger = True
             if danger_gradient.length_squared() < 1e-4:
                 danger_gradient = self._rng.next_unit_circle()
-            flee_vector = flee_vector - _safe_normalize(danger_gradient) * (
-                base_speed * min(1.0, danger_level)
-            )
+            if danger_gradient.length_squared() > 1e-12:
+                danger_gradient.normalize_ip()
+                flee_scale = base_speed * min(1.0, danger_level)
+                flee_vector.x -= danger_gradient.x * flee_scale
+                flee_vector.y -= danger_gradient.y * flee_scale
 
         for other, dist_sq, offset in zip(neighbors, dist_sq_list, neighbor_offsets):
             groups_differ = (
@@ -838,17 +873,23 @@ class World:
                 and other.group_id != agent.group_id
             )
             if groups_differ and dist_sq < 4.0:
-                flee_vector = flee_vector - _safe_normalize(offset) * base_speed
-                sensed_danger = True
+                if dist_sq > 1e-12:
+                    inv_len = 1.0 / math.sqrt(dist_sq)
+                    flee_vector.x -= offset.x * inv_len * base_speed
+                    flee_vector.y -= offset.y * inv_len * base_speed
+                    sensed_danger = True
 
         if flee_vector.length_squared() > 1e-3:
             agent.state = AgentState.FLEE
             return flee_vector, sensed_danger
 
-        food_here = self._environment.sample_food(agent.position)
+        food_here = self._environment.sample_food(base_cell_key)
         food_gradient = Vector2()
-        pheromone_gradient = ZERO if agent.group_id == self._UNGROUPED else self._pheromone_gradient(agent.group_id, agent.position)
-        danger_gradient_away = danger_gradient
+        pheromone_gradient = (
+            ZERO
+            if agent.group_id == self._UNGROUPED
+            else self._pheromone_gradient(agent.group_id, agent.position, base_cell_key)
+        )
         grouped = agent.group_id != self._UNGROUPED
         if neighbors:
             personal_space_bias = (
@@ -899,13 +940,27 @@ class World:
         )
 
         food_bias = ZERO
-        pheromone_bias = _safe_normalize(pheromone_gradient) if pheromone_gradient.length_squared() > 1e-4 else ZERO
-        danger_bias = _safe_normalize(danger_gradient_away) if danger_gradient_away.length_squared() > 1e-4 else ZERO
+        pheromone_bias_x = 0.0
+        pheromone_bias_y = 0.0
+        pheromone_len_sq = pheromone_gradient.length_squared()
+        if pheromone_len_sq > 1e-4:
+            inv_len = 1.0 / math.sqrt(pheromone_len_sq)
+            pheromone_bias_x = pheromone_gradient.x * inv_len
+            pheromone_bias_y = pheromone_gradient.y * inv_len
+        danger_bias_x = 0.0
+        danger_bias_y = 0.0
+        danger_len_sq = danger_gradient.length_squared()
+        if danger_len_sq > 1e-4:
+            inv_len = 1.0 / math.sqrt(danger_len_sq)
+            danger_bias_x = danger_gradient.x * inv_len
+            danger_bias_y = danger_gradient.y * inv_len
 
         needs_food = agent.energy < species.reproduction_energy_threshold * 0.6 or food_here > environment.food_per_cell * 0.5
         if needs_food:
-            food_gradient = self._food_gradient(agent.position)
-            food_bias = _safe_normalize(food_gradient) if food_gradient.length_squared() > 1e-4 else ZERO
+            food_gradient = self._food_gradient(agent.position, base_cell_key)
+            if food_gradient.length_squared() > 1e-4:
+                food_gradient.normalize_ip()
+                food_bias = food_gradient
         if needs_food:
             agent.state = AgentState.SEEKING_FOOD
             food_scale = base_speed * 0.4
@@ -922,8 +977,8 @@ class World:
             desired_x += cohesion_all.x * cohesion_scale
             desired_y += cohesion_all.y * cohesion_scale
             pheromone_scale = base_speed * 0.25
-            desired_x += pheromone_bias.x * pheromone_scale
-            desired_y += pheromone_bias.y * pheromone_scale
+            desired_x += pheromone_bias_x * pheromone_scale
+            desired_y += pheromone_bias_y * pheromone_scale
         else:
             agent.state = AgentState.WANDER
             wander = self._wander_direction(agent)
@@ -931,8 +986,8 @@ class World:
             desired_x += wander.x * wander_scale
             desired_y += wander.y * wander_scale
             pheromone_scale = base_speed * 0.15
-            desired_x += pheromone_bias.x * pheromone_scale
-            desired_y += pheromone_bias.y * pheromone_scale
+            desired_x += pheromone_bias_x * pheromone_scale
+            desired_y += pheromone_bias_y * pheromone_scale
 
         personal_scale = base_speed * feedback.personal_space_weight
         desired_x += personal_space_bias.x * personal_scale
@@ -968,8 +1023,8 @@ class World:
             desired_x += (inward_x - desired_x) * turn
             desired_y += (inward_y - desired_y) * turn
         danger_scale = base_speed * 0.2
-        desired_x -= danger_bias.x * danger_scale
-        desired_y -= danger_bias.y * danger_scale
+        desired_x -= danger_bias_x * danger_scale
+        desired_y -= danger_bias_y * danger_scale
         desired = Vector2(desired_x, desired_y)
         if return_sensed:
             return desired, sensed_danger
@@ -1191,7 +1246,11 @@ class World:
             t = (dist_sq - dead_sq) / denom
             t = max(0.0, min(1.0, t))
             strength = t * t
-        return _safe_normalize(to_base) * strength
+        if to_base.length_squared() < 1e-12:
+            return ZERO
+        to_base.normalize_ip()
+        to_base *= strength
+        return to_base
 
     def _personal_space(
         self, neighbor_offsets: List[Vector2], neighbor_dist_sq: List[float] | None = None
@@ -1328,10 +1387,14 @@ class World:
             max(0.0, min(size, position.y)),
         )
 
+    def _cell_key(self, position: Vector2) -> tuple[int, int]:
+        return self._environment._cell_key(position)
+
     def _orthogonal_neighbor_keys(
-        self, position: Vector2
+        self, position: Vector2, base_key: tuple[int, int] | None = None
     ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int], tuple[int, int]]:
-        base_key = self._environment._cell_key(self._clamp_position(position))
+        if base_key is None:
+            base_key = self._environment._cell_key(position)
         add_key = self._environment._add_key2
         right = add_key(base_key, 1, 0)
         left = add_key(base_key, -1, 0)
@@ -1339,24 +1402,26 @@ class World:
         down = add_key(base_key, 0, -1)
         return (right, left, up, down)
 
-    def _food_gradient(self, position: Vector2) -> Vector2:
-        right_key, left_key, up_key, down_key = self._orthogonal_neighbor_keys(position)
+    def _food_gradient(self, position: Vector2, base_key: tuple[int, int] | None = None) -> Vector2:
+        right_key, left_key, up_key, down_key = self._orthogonal_neighbor_keys(position, base_key)
         right = self._environment.peek_food(right_key)
         left = self._environment.peek_food(left_key)
         up = self._environment.peek_food(up_key)
         down = self._environment.peek_food(down_key)
         return Vector2(right - left, up - down)
 
-    def _pheromone_gradient(self, group_id: int, position: Vector2) -> Vector2:
-        right_key, left_key, up_key, down_key = self._orthogonal_neighbor_keys(position)
+    def _pheromone_gradient(
+        self, group_id: int, position: Vector2, base_key: tuple[int, int] | None = None
+    ) -> Vector2:
+        right_key, left_key, up_key, down_key = self._orthogonal_neighbor_keys(position, base_key)
         right = self._environment.sample_pheromone(right_key, group_id)
         left = self._environment.sample_pheromone(left_key, group_id)
         up = self._environment.sample_pheromone(up_key, group_id)
         down = self._environment.sample_pheromone(down_key, group_id)
         return Vector2(right - left, up - down)
 
-    def _danger_gradient(self, position: Vector2) -> Vector2:
-        right_key, left_key, up_key, down_key = self._orthogonal_neighbor_keys(position)
+    def _danger_gradient(self, position: Vector2, base_key: tuple[int, int] | None = None) -> Vector2:
+        right_key, left_key, up_key, down_key = self._orthogonal_neighbor_keys(position, base_key)
         right = self._environment.sample_danger(right_key)
         left = self._environment.sample_danger(left_key)
         up = self._environment.sample_danger(up_key)
@@ -1419,6 +1484,9 @@ class World:
         if population is None:
             population = len(self._agents)
         traits = self._clamp_traits(agent.traits) if traits is None else traits
+        base_cell_key = self._cell_key(agent.position)
+        pending_food = self._pending_food
+        pending_pheromone = self._pending_pheromone
         metabolism_multiplier = self._trait_metabolism_multiplier(traits)
         speed_cost = agent.velocity.length() * 0.05 * metabolism_multiplier
         metabolism = (self._config.species.metabolism_per_second * metabolism_multiplier + speed_cost) * dt
@@ -1434,7 +1502,10 @@ class World:
             disease_risk = disease_risk / max(0.1, disease_resistance)
             if self._rng.next_float() < disease_risk:
                 agent.alive = False
-                self._pending_food.append((agent.position, self._config.environment.food_from_death))
+                pending_food[base_cell_key] = (
+                    pending_food.get(base_cell_key, 0.0)
+                    + self._config.environment.food_from_death
+                )
                 return births_added
         else:
             agent.stress = max(0.0, agent.stress - 0.05 * dt)
@@ -1443,10 +1514,10 @@ class World:
         gained_energy = 0.0
         remaining = max_consumption
         if remaining > 0.0:
-            available = self._environment.sample_food(agent.position)
+            available = self._environment.sample_food(base_cell_key)
             if available > 0:
                 consumed = min(available, remaining)
-                self._environment.consume_food(agent.position, consumed)
+                self._environment.consume_food(base_cell_key, consumed)
                 gained_energy += consumed
         agent.energy += gained_energy
 
@@ -1514,7 +1585,11 @@ class World:
                 self._birth_queue.append(child)
                 births_added += 1
                 if child_group != self._UNGROUPED:
-                    self._pending_pheromone.append((agent.position, child_group, self._config.environment.pheromone_deposit_on_birth))
+                    pheromone_key = (base_cell_key, child_group)
+                    pending_pheromone[pheromone_key] = (
+                        pending_pheromone.get(pheromone_key, 0.0)
+                        + self._config.environment.pheromone_deposit_on_birth
+                    )
 
         hazard_per_second = (
             self._config.feedback.base_death_probability_per_second
@@ -1524,12 +1599,18 @@ class World:
         hazard_chance = min(1.0, hazard_per_second * dt)
         if hazard_chance > 0.0 and self._rng.next_float() < hazard_chance:
             agent.alive = False
-            self._pending_food.append((agent.position, self._config.environment.food_from_death))
+            pending_food[base_cell_key] = (
+                pending_food.get(base_cell_key, 0.0)
+                + self._config.environment.food_from_death
+            )
             return births_added
 
         if agent.energy <= 0 or agent.age >= self._config.species.max_age:
             agent.alive = False
-            self._pending_food.append((agent.position, self._config.environment.food_from_death))
+            pending_food[base_cell_key] = (
+                pending_food.get(base_cell_key, 0.0)
+                + self._config.environment.food_from_death
+            )
         return births_added
 
     def _mutate_group(self, group_id: int, can_create_groups: bool, position: Vector2, traits: AgentTraits) -> int:
@@ -1551,12 +1632,12 @@ class World:
         return group_id
 
     def _apply_field_events(self) -> None:
-        for pos, amt in self._pending_food:
-            self._environment.add_food(pos, amt)
-        for pos, amt in self._pending_danger:
-            self._environment.add_danger(pos, amt)
-        for pos, gid, amt in self._pending_pheromone:
-            self._environment.add_pheromone(pos, gid, amt)
+        for cell_key, amt in self._pending_food.items():
+            self._environment.add_food(cell_key, amt)
+        for cell_key, amt in self._pending_danger.items():
+            self._environment.add_danger(cell_key, amt)
+        for (cell_key, gid), amt in self._pending_pheromone.items():
+            self._environment.add_pheromone(cell_key, gid, amt)
         self._pending_food.clear()
         self._pending_danger.clear()
         self._pending_pheromone.clear()

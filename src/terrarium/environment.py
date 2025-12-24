@@ -145,8 +145,8 @@ class EnvironmentGrid:
         field_key = (*key, group_id)
         return self._pheromone_field.get(field_key, 0.0)
 
-    def add_pheromone(self, position: Vector2, group_id: int, amount: float) -> None:
-        key = (*self._cell_key(position), group_id)
+    def add_pheromone(self, position: Vector2 | tuple[int, int], group_id: int, amount: float) -> None:
+        key = (*position, group_id) if isinstance(position, tuple) else (*self._cell_key(position), group_id)
         self._pheromone_field[key] = self._pheromone_field.get(key, 0.0) + amount
 
     def tick(self, delta_time: float) -> None:

@@ -399,7 +399,7 @@ def test_tick_metrics_accumulates_grouped_population_once():
     world._refresh_index_map()
 
     metrics = world.step(0)
-    world._metrics.clear()
+    world._metrics = None
     world._population_stats_dirty = False
 
     def fail_recalc():
@@ -2038,4 +2038,3 @@ def test_steering_stride_reuses_last_desired():
     agent0_next = world.agents[0]
     assert agent0_next.last_desired.x == approx(last0[0])
     assert agent0_next.last_desired.y == approx(last0[1])
-
