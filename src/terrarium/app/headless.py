@@ -7,8 +7,8 @@ import math
 from pathlib import Path
 from typing import Optional
 
-from .config import SimulationConfig
-from .world import World
+from ..sim.core.config import SimulationConfig
+from ..sim.core.world import World
 
 
 _BASIC_HEADER = [

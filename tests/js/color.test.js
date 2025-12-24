@@ -7,7 +7,7 @@ import {
   elderScaleMultiplier,
   reproductionDesire,
   pulseLightnessOffset,
-} from '../../src/terrarium/static/color.js';
+} from '../../src/terrarium/app/static/color.js';
 
 test('returns hue within [0, 360) for typical ids', () => {
   assert.equal(computeGroupHue(0), 0);

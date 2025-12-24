@@ -1,7 +1,7 @@
 # import pytest
 
-# from terrarium.config import SimulationConfig
-# from terrarium.world import World
+# from terrarium.sim.core.config import SimulationConfig
+# from terrarium.sim.core.world import World
 
 
 # def test_long_run_population_groups_and_performance():

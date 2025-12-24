@@ -10,8 +10,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import SimulationConfig
-from .world import World
+from ..sim.core.config import SimulationConfig
+from ..sim.core.world import World
 
 
 class SimulationController:

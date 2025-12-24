@@ -11,7 +11,7 @@ def test_repo_imports_without_editable_install():
     env.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
     proc = subprocess.run(
-        [sys.executable, "-c", "import terrarium.headless; print(terrarium.headless.__file__)"],
+        [sys.executable, "-c", "import terrarium.app.headless; print(terrarium.app.headless.__file__)"],
         cwd=repo_root,
         env=env,
         capture_output=True,
@@ -22,8 +22,8 @@ def test_repo_imports_without_editable_install():
 
     stdout = proc.stdout.strip().splitlines()
     stdout = stdout[-1] if stdout else ""
-    assert stdout, "terrarium.headless path not printed"
+    assert stdout, "terrarium.app.headless path not printed"
 
     output_path = Path(stdout).resolve()
-    expected_path = (repo_root / "src" / "terrarium" / "headless.py").resolve()
+    expected_path = (repo_root / "src" / "terrarium" / "app" / "headless.py").resolve()
     assert output_path.samefile(expected_path)
