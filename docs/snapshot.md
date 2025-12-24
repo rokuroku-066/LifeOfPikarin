@@ -17,7 +17,7 @@ The cube viewer in `src/terrarium/static/app.js` reads the snapshot payload emit
 
 ## Metrics payload
 
-Fields currently emitted from `terrarium.world.TickMetrics`:
+Fields currently emitted from `terrarium.sim.types.metrics.TickMetrics`:
 
 - `tick`: tick index the metrics were computed for.
 - `population`: living agent count.

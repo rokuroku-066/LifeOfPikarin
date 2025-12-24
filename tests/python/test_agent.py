@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pygame.math import Vector2
 
-from terrarium.agent import Agent, AgentState, AgentTraits
-from terrarium.config import EnvironmentConfig, SimulationConfig, SpeciesConfig
-from terrarium.world import World
+from terrarium.sim.core.agent import Agent, AgentState, AgentTraits
+from terrarium.sim.core.config import EnvironmentConfig, SimulationConfig, SpeciesConfig
+from terrarium.sim.core.world import World
 
 
 def _make_agent(agent_id: int) -> Agent:

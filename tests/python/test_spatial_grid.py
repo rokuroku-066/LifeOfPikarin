@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pygame.math import Vector2
 
-from terrarium.agent import Agent, AgentState
-from terrarium.spatial_grid import SpatialGrid
+from terrarium.sim.core.agent import Agent, AgentState
+from terrarium.sim.core.spatial_grid import SpatialGrid
 
 
 def test_neighbor_query_matches_bruteforce():

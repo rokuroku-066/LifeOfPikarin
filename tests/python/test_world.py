@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import fields as dataclass_fields
 
 from pygame.math import Vector2
 from pytest import approx
 
-from terrarium.agent import Agent, AgentState, AgentTraits
-from terrarium.config import (
+from terrarium.sim.core.agent import Agent, AgentState, AgentTraits
+from terrarium.sim.core.config import (
     EnvironmentConfig,
     EvolutionClampConfig,
     EvolutionConfig,
@@ -15,8 +15,10 @@ from terrarium.config import (
     SimulationConfig,
     SpeciesConfig,
 )
-from terrarium.environment import FoodCell
-from terrarium.world import DeterministicRng, World
+from terrarium.sim.core.environment import FoodCell
+from terrarium.sim.core.rng import DeterministicRng
+from terrarium.sim.core.world import World
+from terrarium.sim.systems import fields as fields_system, lifecycle, steering
 
 
 def run_steps(config: SimulationConfig, steps: int):
@@ -90,7 +92,7 @@ def test_deterministic_steps():
 
 
 def test_feedback_config_excludes_removed_pressure_fields():
-    names = {f.name for f in fields(FeedbackConfig)}
+    names = {f.name for f in dataclass_fields(FeedbackConfig)}
     assert "global_population_pressure_start" not in names
     assert "global_population_pressure_slope" not in names
     assert "global_population_pressure_delay_seconds" not in names
@@ -104,7 +106,7 @@ def test_feedback_config_excludes_removed_pressure_fields():
 
 
 def test_environment_config_excludes_group_food_fields():
-    names = {f.name for f in fields(EnvironmentConfig)}
+    names = {f.name for f in dataclass_fields(EnvironmentConfig)}
     assert "group_food_max_per_cell" not in names
     assert "group_food_decay_rate" not in names
     assert "group_food_diffusion_rate" not in names
@@ -464,7 +466,9 @@ def test_disease_death_returns_zero_births():
     world = World(config)
     agent = world.agents[0]
 
-    births = world._apply_life_cycle(agent, neighbor_count=100, same_group_neighbors=0, can_create_groups=False)
+    births = lifecycle.apply_life_cycle(
+        world, agent, neighbor_count=100, same_group_neighbors=0, can_create_groups=False
+    )
 
     assert births == 0
     assert not agent.alive
@@ -722,9 +726,9 @@ def test_gradients_match_neighbor_cells():
     }
 
     pos = Vector2(1.25, 1.25)
-    assert tuple(world._food_gradient(pos)) == approx((4.0, 4.0))  # right-left, up-down
-    assert tuple(world._danger_gradient(pos)) == approx((7.0, 3.0))
-    assert tuple(world._pheromone_gradient(4, pos)) == approx((4.0, 5.0))
+    assert tuple(fields_system.food_gradient(world, pos)) == approx((4.0, 4.0))  # right-left, up-down
+    assert tuple(fields_system.danger_gradient(world, pos)) == approx((7.0, 3.0))
+    assert tuple(fields_system.pheromone_gradient(world, 4, pos)) == approx((4.0, 5.0))
 
     # Boundary clamping preserves previous behavior (left/down clamp to edge cell)
     env._food_cells.update(
@@ -738,9 +742,9 @@ def test_gradients_match_neighbor_cells():
     env._pheromone_field.update({(1, 0, 4): 9.0, (0, 0, 4): 3.0, (0, 1, 4): 9.0})
 
     edge_pos = Vector2(0.05, 0.05)
-    assert tuple(world._food_gradient(edge_pos)) == approx((8.0, 8.0))
-    assert tuple(world._danger_gradient(edge_pos)) == approx((3.5, 3.5))
-    assert tuple(world._pheromone_gradient(4, edge_pos)) == approx((6.0, 6.0))
+    assert tuple(fields_system.food_gradient(world, edge_pos)) == approx((8.0, 8.0))
+    assert tuple(fields_system.danger_gradient(world, edge_pos)) == approx((3.5, 3.5))
+    assert tuple(fields_system.pheromone_gradient(world, 4, edge_pos)) == approx((6.0, 6.0))
 
 
 def test_small_group_adoption_relaxes_threshold():
@@ -1583,7 +1587,7 @@ def test_personal_space_pushes_when_too_close():
         state=AgentState.WANDER,
     )
     speed_cap = world._trait_speed_limit(agent.traits)
-    desired = world._compute_desired_velocity(agent, [other], [Vector2(0.2, 0.0)], speed_cap)
+    desired = steering.compute_desired_velocity(world, agent, [other], [Vector2(0.2, 0.0)], speed_cap)
     assert desired.x < 0.0  # 押し返される
     # ほぼ一直線の押し返しになることを確認（y成分が小さい）
     assert abs(desired.y) < abs(desired.x) * 0.25
@@ -1637,7 +1641,9 @@ def test_other_group_separation_weight_pushes_harder_than_allies():
         age=5.0,
         state=AgentState.WANDER,
     )
-    separation = world._separation(agent, [ally, rival], [Vector2(1.0, 0.0), Vector2(-1.0, 0.0)])
+    separation = steering.separation(
+        world, agent, [ally, rival], [Vector2(1.0, 0.0), Vector2(-1.0, 0.0)]
+    )
 
     assert separation.x > 0.9  # 強い他グループ押し出しで右向き
     assert abs(separation.y) < 1e-6
@@ -1692,7 +1698,7 @@ def test_intergroup_avoidance_applies_without_triggering_flee():
     )
 
     speed_cap = world._trait_speed_limit(agent.traits)
-    desired = world._compute_desired_velocity(agent, [rival], [Vector2(3.0, 0.0)], speed_cap)
+    desired = steering.compute_desired_velocity(world, agent, [rival], [Vector2(3.0, 0.0)], speed_cap)
 
     assert desired.x < 0.0  # 異グループから離れる
     assert abs(desired.y) < 1e-6
@@ -1761,7 +1767,7 @@ def test_ally_cohesion_weight_scales_pull():
             state=AgentState.WANDER,
         )
         speed_cap = world._trait_speed_limit(agent.traits)
-        desired = world._compute_desired_velocity(agent, [ally], [Vector2(1.0, 0.0)], speed_cap)
+        desired = steering.compute_desired_velocity(world, agent, [ally], [Vector2(1.0, 0.0)], speed_cap)
         return desired
 
     desired_low = compute_desired(config_low)
@@ -1878,7 +1884,7 @@ def test_group_base_attraction_pulls_toward_base():
     )
 
     speed_cap = world._trait_speed_limit(agent.traits)
-    desired = world._compute_desired_velocity(agent, [], [], speed_cap)
+    desired = steering.compute_desired_velocity(world, agent, [], [], speed_cap)
 
     assert desired.x < 0.0
     assert abs(desired.y) < 1e-6
@@ -1942,7 +1948,7 @@ def test_min_separation_term_activates_when_too_close():
             age=0.0,
             state=AgentState.WANDER,
         )
-        return world._separation(agent, [neighbor], [Vector2(0.2, 0.0)])  # type: ignore[attr-defined]
+        return steering.separation(world, agent, [neighbor], [Vector2(0.2, 0.0)])
 
     sep_off = compute_sep(config_off)
     sep_on = compute_sep(config_on)

@@ -24,12 +24,15 @@
 │   ├── DESIGN.md         # Phase 1 設計の詳細
 │   └── snapshot.md       # WebSocket スナップショット仕様
 ├── src/terrarium/        # Python 製シミュレーション & FastAPI + Three.js ビューア
-│   ├── world.py          # コアステップ・スナップショット生成
-│   ├── spatial_grid.py   # 近傍検索用 Uniform Grid
-│   ├── environment.py    # 食料/危険/フェロモンのフィールド管理
-│   ├── headless.py       # CLI ランナー（CSV/JSON 出力）
-│   ├── server.py         # FastAPI + WebSocket 配信
-│   └── static/           # index.html / app.js (Three.js)
+│   ├── app/
+│   │   ├── headless.py   # CLI ランナー（CSV/JSON 出力）
+│   │   ├── server.py     # FastAPI + WebSocket 配信
+│   │   └── static/       # index.html / app.js (Three.js)
+│   └── sim/
+│       ├── core/         # World/Agent/Config 等のコア
+│       ├── systems/      # 群れ・操舵・ライフサイクルなどのシステム分割
+│       ├── types/        # Snapshot/Metrics などの型
+│       └── utils/        # 数学ユーティリティ
 ├── tests/python/         # 決定性と安定性のユニットテスト
 ├── tests/js/             # ビュー用ユーティリティの Node テスト
 ├── requirements.txt
@@ -49,7 +52,7 @@ Three.js のユーティリティをテストする場合は Node.js 20+ を用�
 ## ヘッドレス実行（CSV/JSON ログ）
 
 ```bash
-python -m terrarium.headless \
+python -m terrarium.app.headless \
   --steps 5000 \
   --seed 42 \
   --log tests/artifacts/metrics.csv \
@@ -62,17 +65,17 @@ python -m terrarium.headless \
 - `--log-format detailed` は密度関連（ungrouped、group サイズ、セル占有）、ストレス、速度、stride 状態などを追加。
 - `--summary` は末尾 `--summary-window` tick のパーセンタイル・相関・ピークを JSON で書き出します。
 
-主要なパラメータは `src/terrarium/config.py` の `SimulationConfig` 配下にあります。`SimulationConfig.from_yaml(path)` で外部 YAML を読み込むこともできます。
+主要なパラメータは `src/terrarium/sim/core/config.py` の `SimulationConfig` 配下にあります。`SimulationConfig.from_yaml(path)` で外部 YAML を読み込むこともできます。
 
 ## Web ビューア（Three.js）
 
 ```bash
-uvicorn terrarium.server:app --reload --port 8000
+uvicorn terrarium.app.server:app --reload --port 8000
 ```
 
 - ブラウザで `http://localhost:8000` を開くと俯瞰・斜め・POV の 3 画面が表示されます。
 - `/api/control/start|stop|reset|speed` がシミュレーション制御、`/ws` がスナップショット配信（クライアント側から状態変更は行わない）。
-- ピクセル比制限と影オフで大規模インスタンスでも描画負荷を抑えています。ネットワークが無い場合は `src/terrarium/static/app.js` の Three.js import をローカルに置き換えてください。
+- ピクセル比制限と影オフで大規模インスタンスでも描画負荷を抑えています。ネットワークが無い場合は `src/terrarium/app/static/app.js` の Three.js import をローカルに置き換えてください。
 
 ## バリデーション
 
@@ -91,7 +94,7 @@ uvicorn terrarium.server:app --reload --port 8000
 - 長時間確認の推奨コマンド
 
   ```bash
-  python -m terrarium.headless --steps 5000 --seed 42 --log tests/artifacts/metrics.csv --log-format detailed --summary tests/artifacts/summary.json
+  python -m terrarium.app.headless --steps 5000 --seed 42 --log tests/artifacts/metrics.csv --log-format detailed --summary tests/artifacts/summary.json
   ```
 
 ## 参考ドキュメント

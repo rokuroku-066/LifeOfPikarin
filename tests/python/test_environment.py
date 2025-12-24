@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pygame.math import Vector2
 
-from terrarium.config import EnvironmentConfig, ResourcePatchConfig
-from terrarium.environment import EnvironmentGrid
+from terrarium.sim.core.config import EnvironmentConfig, ResourcePatchConfig
+from terrarium.sim.core.environment import EnvironmentGrid
 
 
 def test_pheromone_diffusion_is_bounded_and_fades():

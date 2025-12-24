@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from terrarium.headless import run_headless
+from terrarium.app.headless import run_headless
 
 
 def _read_csv(path):

@@ -91,5 +91,5 @@
 ## 10. バリデーション手順（Phase 1）
 
 - **必須テスト**: `pytest tests/python`。決定性、近傍取得、形質クランプ、環境ノイズの再現性、スナップショット内容、人口上限などをカバー。
-- **長時間確認**: `python -m terrarium.headless --steps 5000 --seed 42 --log tests/artifacts/metrics.csv --log-format detailed --summary tests/artifacts/summary.json` で headless 実行し、ピーク人口・tick 時間・近傍チェックなどが安定していることを確認。
-- **表示確認**: `uvicorn terrarium.server:app --reload --port 8000` を起動し、ブラウザでスナップショットが補間表示されることを目視。Sim を止めても View がスムーズに補間/再接続することを確認する。
+- **長時間確認**: `python -m terrarium.app.headless --steps 5000 --seed 42 --log tests/artifacts/metrics.csv --log-format detailed --summary tests/artifacts/summary.json` で headless 実行し、ピーク人口・tick 時間・近傍チェックなどが安定していることを確認。
+- **表示確認**: `uvicorn terrarium.app.server:app --reload --port 8000` を起動し、ブラウザでスナップショットが補間表示されることを目視。Sim を止めても View がスムーズに補間/再接続することを確認する。
