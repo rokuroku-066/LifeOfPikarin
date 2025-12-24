@@ -11,13 +11,13 @@
 
 ## 1. コンポーネント概要
 
-- **Simulation Core (`src/terrarium/world.py`)**: エージェント更新、グループダイナミクス、ライフサイクル計算、環境フィールド適用、メトリクス記録を担当。
-- **Environment (`src/terrarium/environment.py`)**: 食料・危険・フェロモンをセルグリッドで管理し、拡散/減衰/再生をまとめて実行。リソースパッチと決定論的気候ノイズをサポート。
-- **Spatial Hash (`src/terrarium/spatial_grid.py`)**: 近傍セルだけを走査する Uniform Grid。事前計算済みセルオフセットを使う `collect_neighbors_precomputed` が per-agent ループを支える。
-- **RNG (`src/terrarium/rng.py`)**: `DeterministicRng` で seed 固定の乱数を供給。気候ノイズは別ストリーム（seed + salt）。
-- **Headless ランナー (`src/terrarium/headless.py`)**: CLI でステップを回し、CSV/JSON にメトリクスを出力して長期安定性を確認。
-- **Web サーバー (`src/terrarium/server.py`)**: FastAPI + WebSocket。`/api/control/{start,stop,reset,speed}` で制御し、`/ws` がスナップショットを配信。
-- **View (`src/terrarium/static/app.js`)**: Three.js の `InstancedMesh` でキューブを 3 ビュー（俯瞰・斜め・POV）描画。スナップショットを補間し、色/スケールに状態をマップ。
+- **Simulation Core (`src/terrarium/sim/core/world.py`)**: エージェント更新、グループダイナミクス、ライフサイクル計算、環境フィールド適用、メトリクス記録を担当。
+- **Environment (`src/terrarium/sim/core/environment.py`)**: 食料・危険・フェロモンをセルグリッドで管理し、拡散/減衰/再生をまとめて実行。リソースパッチと決定論的気候ノイズをサポート。
+- **Spatial Hash (`src/terrarium/sim/core/spatial_grid.py`)**: 近傍セルだけを走査する Uniform Grid。事前計算済みセルオフセットを使う `collect_neighbors_precomputed` が per-agent ループを支える。
+- **RNG (`src/terrarium/sim/core/rng.py`)**: `DeterministicRng` で seed 固定の乱数を供給。気候ノイズは別ストリーム（seed + salt）。
+- **Headless ランナー (`src/terrarium/app/headless.py`)**: CLI でステップを回し、CSV/JSON にメトリクスを出力して長期安定性を確認。
+- **Web サーバー (`src/terrarium/app/server.py`)**: FastAPI + WebSocket。`/api/control/{start,stop,reset,speed}` で制御し、`/ws` がスナップショットを配信。
+- **View (`src/terrarium/app/static/app.js`)**: Three.js の `InstancedMesh` でキューブを 3 ビュー（俯瞰・斜め・POV）描画。スナップショットを補間し、色/スケールに状態をマップ。
 
 ## 2. 状態と設定
 
@@ -81,7 +81,7 @@
 - **フィールド出力**: 食料セル一覧とフェロモン（セルごとに最優勢グループの値と ID）。危険フィールドは Phase 1 では送信しない。
 - **メトリクス**: `TickMetrics` を `snapshot.metadata` と共に配信（`world_size`、`sim_dt`、`tick_rate`、`seed`）。Headless では basic/detailed CSV を切替でき、detailed ではストレスや群サイズ分布・セル占有状況・ストライド適用状況まで含められる。
 
-## 9. View / インタラクション（`static/app.js`）
+## 9. View / インタラクション（`app/static/app.js`）
 
 - **レンダリング**: 単一 `InstancedMesh` で全キューブを描画。scissor ビューポートで俯瞰・斜め・POV の 3 カメラを一度のフレームに収める。パフォーマンス維持のため影なし＋ピクセル比を 1.0〜1.3 に自動調整。
 - **補間**: WebSocket スナップショットを Map 化し、前後位置/速度/heading/サイズを線形補間。1 体を自動選択して POV カメラを追従（消滅時は再選択）。

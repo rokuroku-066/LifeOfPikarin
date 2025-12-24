@@ -1,6 +1,6 @@
 # WebSocket snapshot schema (Phase 1 compatibility + Phase 2 signals)
 
-The cube viewer in `src/terrarium/static/app.js` reads the snapshot payload emitted by the simulation WebSocket. The schema below keeps the existing Phase 1 contract stable while adding forward-compatible signals for richer animation in Phase 2.
+The cube viewer in `src/terrarium/app/static/app.js` reads the snapshot payload emitted by the simulation WebSocket. The schema below keeps the existing Phase 1 contract stable while adding forward-compatible signals for richer animation in Phase 2.
 
 ## Top-level fields
 
