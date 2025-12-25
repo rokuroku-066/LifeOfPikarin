@@ -251,6 +251,7 @@ function initPikarinInstancing() {
   loader.load(
     assetUrl('pikarin.glb'),
     (gltf) => {
+      gltf.scene.updateMatrixWorld(true);
       const meshes = [];
       gltf.scene.traverse((child) => {
         if (child.isMesh) meshes.push(child);
@@ -265,8 +266,8 @@ function initPikarinInstancing() {
         return;
       }
 
-      const bodyGeometry = bodyMesh.geometry.clone();
-      const faceGeometry = faceMesh.geometry.clone();
+      const bodyGeometry = bakeMeshGeometry(bodyMesh);
+      const faceGeometry = bakeMeshGeometry(faceMesh);
       const bodyMaterial = normalizeMaterial(bodyMesh.material, { vertexColors: true });
       const faceMaterial = normalizeMaterial(faceMesh.material, {
         vertexColors: false,
@@ -282,6 +283,14 @@ function initPikarinInstancing() {
       initFallbackInstancing();
     },
   );
+}
+
+function bakeMeshGeometry(mesh) {
+  const geometry = mesh.geometry.clone();
+  geometry.applyMatrix4(mesh.matrixWorld);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
 }
 
 function normalizeMaterial(material, { vertexColors, transparent = false, alphaTest = 0 } = {}) {

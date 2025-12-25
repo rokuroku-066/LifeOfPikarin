@@ -18,6 +18,7 @@ Replace the Phase 1 multi-view cube renderer with the Phase 2 single fixed obliq
 - [x] (2025-09-23 20:46Z) Validate with required test commands and summarize manual verification steps.
 - [x] (2025-09-24 09:05Z) Remove bundled dummy assets while keeping the fallback geometry path and update documentation.
 - [x] (2025-09-24 09:42Z) Add a standalone dummy asset generator script and update README usage.
+- [x] (2025-09-24 10:12Z) Bake GLB mesh transforms into instanced geometry to preserve offsets.
 
 ## Surprises & Discoveries
 
@@ -34,10 +35,13 @@ The minimal GLB placeholder contains no meshes, so the viewer needs a fallback g
 - Decision: Provide a script to generate placeholder GLB/textures on demand.
   Rationale: Enables local validation without committing placeholder binaries.
   Date/Author: 2025-09-24 / Codex
+- Decision: Apply mesh world transforms to cloned geometries before instancing.
+  Rationale: Preserves authored offsets between body and face meshes in GLB files.
+  Date/Author: 2025-09-24 / Codex
 
 ## Outcomes & Retrospective
 
-Viewer now uses a single fixed oblique camera, textured floor and walls, and instanced body/face meshes with a fallback geometry path. The repo no longer bundles dummy assets; real assets should be supplied under `src/terrarium/app/static/assets/` when available. A standalone script can generate placeholder assets for local testing without committing them.
+Viewer now uses a single fixed oblique camera, textured floor and walls, and instanced body/face meshes with a fallback geometry path. GLB mesh transforms are baked into instanced geometries to preserve authored offsets. The repo no longer bundles dummy assets; real assets should be supplied under `src/terrarium/app/static/assets/` when available. A standalone script can generate placeholder assets for local testing without committing them.
 
 ## Context and Orientation
 
@@ -49,7 +53,7 @@ The simulation and viewer must remain strictly separated, meaning the viewer onl
 
 ## Plan of Work
 
-Update the viewer to match Phase 2 by removing multi-camera layout, OrbitControls, and grid helpers from `src/terrarium/app/static/app.js`, replacing them with a single PerspectiveCamera configured per the spec. Add GLTFLoader usage to load `static/assets/pikarin.glb`, build instanced meshes for body and face, and update transforms/colors per agent. Add background floor and wall planes with texture loading. Provide a fallback dummy geometry if the GLB fails to load or is missing. Update `index.html` to remove multi-view labels and POV tracking. Simplify `styles.css` to remove split view styling. Remove bundled assets from `src/terrarium/app/static/assets/`, add a script to generate placeholders on demand, and update docs to indicate real assets must be provided.
+Update the viewer to match Phase 2 by removing multi-camera layout, OrbitControls, and grid helpers from `src/terrarium/app/static/app.js`, replacing them with a single PerspectiveCamera configured per the spec. Add GLTFLoader usage to load `static/assets/pikarin.glb`, build instanced meshes for body and face (baking mesh transforms into geometry), and update transforms/colors per agent. Add background floor and wall planes with texture loading. Provide a fallback dummy geometry if the GLB fails to load or is missing. Update `index.html` to remove multi-view labels and POV tracking. Simplify `styles.css` to remove split view styling. Remove bundled assets from `src/terrarium/app/static/assets/`, add a script to generate placeholders on demand, and update docs to indicate real assets must be provided.
 
 ## Concrete Steps
 
