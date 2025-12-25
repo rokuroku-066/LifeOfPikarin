@@ -19,6 +19,7 @@ Replace the Phase 1 multi-view cube renderer with the Phase 2 single fixed obliq
 - [x] (2025-09-24 09:05Z) Remove bundled dummy assets while keeping the fallback geometry path and update documentation.
 - [x] (2025-09-24 09:42Z) Add a standalone dummy asset generator script and update README usage.
 - [x] (2025-09-24 10:12Z) Bake GLB mesh transforms into instanced geometry to preserve offsets.
+- [x] (2025-09-24 10:35Z) Fix side wall rotation so wall_side.png faces inward.
 
 ## Surprises & Discoveries
 

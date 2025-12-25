@@ -232,7 +232,7 @@ function initBackground() {
   const sideMat = new THREE.MeshStandardMaterial({ map: wallSideTexture, roughness: 0.9 });
   const sideWall = new THREE.Mesh(wallGeo, sideMat);
   sideWall.position.set(-halfWorld - 0.001, wallHeight / 2, 0);
-  sideWall.rotation.y = -Math.PI / 2;
+  sideWall.rotation.y = Math.PI / 2;
   scene.add(sideWall);
 }
 
