@@ -26,6 +26,7 @@ const modelBaseScale = 1.0;
 const modelYawOffset = 0.0;
 const floorRepeat = 8;
 const colorSaturation = 0.75;
+const ungroupedColor = { hue: 50, saturation: 1.0, lightness: 0.83 };
 const energyVisual = { floor: 0.2, ceiling: 0.9, mid: 10.0, spread: 6.0 };
 const reproductionVisual = {
   threshold: 12.0,
@@ -134,7 +135,16 @@ function computeScale(agent, now, baseSizeOverride, desire) {
 }
 
 function computeColor(agent, now, desire) {
-  const baseHue = computeGroupHue(agent.group);
+  const groupId = Number.isFinite(agent?.group) ? agent.group : -1;
+  if (groupId < 0) {
+    tmpColor.setHSL(
+      ungroupedColor.hue / 360,
+      ungroupedColor.saturation,
+      ungroupedColor.lightness,
+    );
+    return tmpColor;
+  }
+  const baseHue = computeGroupHue(groupId);
   const lineageHue = Number.isFinite(agent?.lineage_id) ? agent.lineage_id : 0;
   const hue = (baseHue + (lineageHue % 12) * 0.8) % 360;
   const baseLightness = energyToLightness(agent.energy, energyVisual);

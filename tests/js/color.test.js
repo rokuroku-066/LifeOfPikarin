@@ -10,25 +10,25 @@ import {
 } from '../../src/terrarium/app/static/color.js';
 
 test('returns hue within [0, 360) for typical ids', () => {
-  assert.equal(computeGroupHue(0), 0);
-  assert.equal(computeGroupHue(1), 47);
-  assert.equal(computeGroupHue(2), 94);
-  assert.equal(computeGroupHue(8), 16);
+  assert.equal(computeGroupHue(0), 97);
+  assert.equal(computeGroupHue(1), 144);
+  assert.equal(computeGroupHue(2), 191);
+  assert.equal(computeGroupHue(8), 113);
 });
 
-test('wraps negative ids into the positive range', () => {
-  assert.equal(computeGroupHue(-1), 313);
-  assert.equal(computeGroupHue(-5), 125);
+test('returns base hue for ungrouped ids', () => {
+  assert.equal(computeGroupHue(-1), 50);
+  assert.equal(computeGroupHue(-5), 50);
 });
 
 test('normalizes very large ids deterministically', () => {
-  assert.equal(computeGroupHue(100), 20);
+  assert.equal(computeGroupHue(100), 117);
   assert.equal(computeGroupHue(1000000), computeGroupHue(1000000 + 360));
 });
 
-test('falls back to zero hue for non-finite values', () => {
-  assert.equal(computeGroupHue(NaN), 0);
-  assert.equal(computeGroupHue(Infinity), 0);
+test('falls back to base hue for non-finite values', () => {
+  assert.equal(computeGroupHue(NaN), 50);
+  assert.equal(computeGroupHue(Infinity), 50);
 });
 
 test('energyToLightness brightens with higher energy', () => {

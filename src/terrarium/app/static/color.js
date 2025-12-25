@@ -3,12 +3,15 @@
 
 /**
  * Derive a deterministic hue for a group identifier.
- * Normalizes the value into [0, 360) to keep CSS/Three.js colors stable even
- * for negative or non-finite ids.
+ * Anchors the palette on the ungrouped base hue (50°) and rotates from there
+ * for group ids while keeping results in [0, 360).
  */
+const baseGroupHue = 50;
+
 export function computeGroupHue(id) {
-  const safeId = Number.isFinite(id) ? id : 0;
-  const rawHue = (safeId * 47) % 360;
+  const safeId = Number.isFinite(id) ? id : -1;
+  if (safeId < 0) return baseGroupHue;
+  const rawHue = baseGroupHue + ((safeId + 1) * 47) % 360;
   return (rawHue + 360) % 360;
 }
 
