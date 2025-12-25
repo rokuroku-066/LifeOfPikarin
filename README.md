@@ -75,7 +75,7 @@ uvicorn terrarium.app.server:app --reload --port 8000
 
 - ブラウザで `http://localhost:8000` を開くと斜め固定カメラの 1 画面が表示されます。
 - `/api/control/start|stop|reset|speed` がシミュレーション制御、`/ws` がスナップショット配信（クライアント側から状態変更は行わない）。
-- ピクセル比制限と影オフで大規模インスタンスでも描画負荷を抑えています。`src/terrarium/app/static/assets/` に本番の GLB/テクスチャ（`pikarin.glb`, `ground.png`, `wall_back.png`, `wall_side.png`）を配置してください。ネットワークが無い場合は `src/terrarium/app/static/app.js` の Three.js import をローカルに置き換えてください。
+- ピクセル比制限と影オフで大規模インスタンスでも描画負荷を抑えています。`src/terrarium/app/static/assets/` に本番の GLB/テクスチャ（`pikarin.glb`, `ground.png`, `wall_back.png`, `wall_side.png`）を配置してください。ダミーを作る場合は `python scripts/generate_dummy_assets.py --output-dir src/terrarium/app/static/assets` を実行してください。ネットワークが無い場合は `src/terrarium/app/static/app.js` の Three.js import をローカルに置き換えてください。
 
 ## バリデーション
 
