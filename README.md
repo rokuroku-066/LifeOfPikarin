@@ -2,7 +2,7 @@
 
 # Life Of Pikarin
 
-俯瞰カメラでキューブの群れが動く Phase 1 完成版です。シミュレーションは固定 Δt で決定論的に進み、描画は Three.js の GPU インスタンシングで行います（Sim → View の一方向）。
+俯瞰カメラでキューブの群れが動く Phase 1 をベースに、Phase 2 では **ぴかりん静的モデル + 背景（床+壁2面） + 斜め固定カメラ** のビューアへ移行中です。シミュレーションは固定 Δt で決定論的に進み、描画は Three.js の GPU インスタンシングで行います（Sim → View の一方向）。
 
 ## 特徴（Phase 1）
 
@@ -12,7 +12,7 @@
 - **長期安定のフィードバック**: 密度ストレス・疾病確率・エネルギー代謝・繁殖抑制で暴走や全滅を防止。
 - **グループダイナミクス**: 未所属からの自律的な形成、近傍多数派への乗換、分裂、拠点吸引をサポート。社会トレイト（`sociality` など）で採用/離脱の傾向が変化。
 - **環境フィールド**: 食料・危険・フェロモンをセルグリッドで管理し、`environment_tick_interval` ごとに拡散・減衰・再生。
-- **ビューア**: Three.js の `InstancedMesh` で俯瞰・斜め・POV の 3 画面を描画。UI は Start/Stop/Reset/速度変更のみで Sim には書き込まない。
+- **ビューア**: Three.js の `InstancedMesh` で 1 画面の斜め固定カメラを描画。UI は Start/Stop/Reset/速度変更のみで Sim には書き込まない。
 
 ## リポジトリ構成
 
@@ -73,9 +73,9 @@ python -m terrarium.app.headless \
 uvicorn terrarium.app.server:app --reload --port 8000
 ```
 
-- ブラウザで `http://localhost:8000` を開くと俯瞰・斜め・POV の 3 画面が表示されます。
+- ブラウザで `http://localhost:8000` を開くと斜め固定カメラの 1 画面が表示されます。
 - `/api/control/start|stop|reset|speed` がシミュレーション制御、`/ws` がスナップショット配信（クライアント側から状態変更は行わない）。
-- ピクセル比制限と影オフで大規模インスタンスでも描画負荷を抑えています。ネットワークが無い場合は `src/terrarium/app/static/app.js` の Three.js import をローカルに置き換えてください。
+- ピクセル比制限と影オフで大規模インスタンスでも描画負荷を抑えています。`src/terrarium/app/static/assets/` に本番の GLB/テクスチャ（`pikarin.glb`, `ground.png`, `wall_back.png`, `wall_side.png`）を配置してください。ダミーを作る場合は `python scripts/generate_dummy_assets.py --output-dir src/terrarium/app/static/assets` を実行してください。ネットワークが無い場合は `src/terrarium/app/static/app.js` の Three.js import をローカルに置き換えてください。
 
 ## バリデーション
 
