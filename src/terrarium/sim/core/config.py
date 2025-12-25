@@ -131,6 +131,7 @@ class EvolutionClampConfig:
 class EvolutionConfig:
     enabled: bool = True
     mutation_strength: float = 0.05
+    trait_mutation_chance: float = 1.0
     lineage_mutation_chance: float = 0.01
     speed_mutation_weight: float = 1.0
     metabolism_mutation_weight: float = 0.5
