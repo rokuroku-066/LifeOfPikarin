@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  appearanceBaseHsl,
   computeGroupHue,
   energyToLightness,
   elderScaleMultiplier,
@@ -61,4 +62,19 @@ test('pulseLightnessOffset stays within amplitude and uses desire', () => {
   const offset = pulseLightnessOffset(250, 1.0, { amplitude: 0.1, frequencyHz: 1.0, phase: 0 });
   assert.ok(offset >= 0);
   assert.ok(offset <= 0.1 + 1e-6);
+});
+
+test('appearanceBaseHsl normalizes hue and clamps saturation/lightness', () => {
+  const base = appearanceBaseHsl({ appearance_h: 405, appearance_s: 1.5, appearance_l: -0.2 });
+  assert.equal(base.hue, 45);
+  assert.equal(base.saturation, 1);
+  assert.equal(base.lightness, 0);
+});
+
+test('appearanceBaseHsl falls back to defaults when missing values', () => {
+  const fallback = { hue: 10, saturation: 0.2, lightness: 0.3 };
+  const base = appearanceBaseHsl({}, fallback);
+  assert.equal(base.hue, 10);
+  assert.equal(base.saturation, 0.2);
+  assert.equal(base.lightness, 0.3);
 });

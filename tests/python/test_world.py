@@ -7,6 +7,7 @@ from pytest import approx
 
 from terrarium.sim.core.agent import Agent, AgentState, AgentTraits
 from terrarium.sim.core.config import (
+    AppearanceConfig,
     EnvironmentConfig,
     EvolutionClampConfig,
     EvolutionConfig,
@@ -17,8 +18,9 @@ from terrarium.sim.core.config import (
 )
 from terrarium.sim.core.environment import FoodCell
 from terrarium.sim.core.rng import DeterministicRng
-from terrarium.sim.core.world import World
+from terrarium.sim.core.world import World, _APPEARANCE_RNG_SALT, _derive_stream_seed
 from terrarium.sim.systems import fields as fields_system, lifecycle, steering
+from terrarium.sim.utils.math2d import _clamp_value
 
 
 def run_steps(config: SimulationConfig, steps: int):
@@ -44,6 +46,8 @@ def make_static_config(seed: int = 1) -> SimulationConfig:
             wander_jitter=0.0,
             reproduction_energy_threshold=1.0,
             adult_age=0.0,
+            initial_age_min=1.0,
+            initial_age_max=1.0,
         ),
     )
     feedback = config.feedback
@@ -346,12 +350,122 @@ def test_snapshot_contains_metadata_and_agent_signals():
 
     assert snapshot.metrics.population == len(world.agents)
     payload = snapshot.agents[0]
-    for key in ["id", "x", "y", "vx", "vy", "group", "lineage_id", "generation", "trait_speed"]:
+    for key in [
+        "id",
+        "x",
+        "y",
+        "vx",
+        "vy",
+        "group",
+        "lineage_id",
+        "generation",
+        "trait_speed",
+        "appearance_h",
+        "appearance_s",
+        "appearance_l",
+    ]:
         assert key in payload
     assert payload["heading"] == approx(world.agents[0].heading)
     assert payload["speed"] == approx(Vector2(payload["vx"], payload["vy"]).length())
     assert payload["behavior_state"]
     assert payload["is_alive"]
+
+
+def test_appearance_inheritance_is_deterministic_and_mutates():
+    appearance = AppearanceConfig(
+        base_h=50.0,
+        base_s=1.0,
+        base_l=0.83,
+        mutation_chance=1.0,
+        mutation_delta_h=12.0,
+        mutation_delta_s=0.1,
+        mutation_delta_l=0.1,
+    )
+    feedback = FeedbackConfig(
+        reproduction_base_chance=1.0,
+        base_death_probability_per_second=0.0,
+        age_death_probability_per_second=0.0,
+        density_death_probability_per_neighbor_per_second=0.0,
+        disease_probability_per_neighbor=0.0,
+        stress_drain_per_neighbor=0.0,
+        group_switch_chance=0.0,
+        group_detach_new_group_chance=0.0,
+        group_formation_chance=0.0,
+        group_split_chance=0.0,
+        group_split_new_group_chance=0.0,
+        group_birth_seed_chance=0.0,
+        group_mutation_chance=0.0,
+    )
+    config = SimulationConfig(
+        seed=21,
+        time_step=1.0,
+        initial_population=10,
+        max_population=11,
+        appearance=appearance,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+            reproduction_energy_threshold=1.0,
+            adult_age=0.0,
+        ),
+        feedback=feedback,
+        evolution=EvolutionConfig(enabled=False),
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+    )
+    world = World(config)
+    parent = world.agents[0]
+
+    births = lifecycle.apply_life_cycle(
+        world,
+        parent,
+        neighbor_count=0,
+        same_group_neighbors=0,
+        can_create_groups=False,
+    )
+    assert births == 1
+    world._apply_births()
+
+    assert len(world.agents) == 11
+    child = next(agent for agent in world.agents if agent.id != parent.id and agent.generation == 1)
+    assert parent.appearance_h == appearance.base_h
+    assert parent.appearance_s == appearance.base_s
+    assert parent.appearance_l == appearance.base_l
+
+    appearance_rng = DeterministicRng(_derive_stream_seed(config.seed, _APPEARANCE_RNG_SALT))
+    appearance_rng.next_float()
+    expected_h = (appearance.base_h + appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h)) % 360
+    expected_s = _clamp_value(
+        appearance.base_s + appearance_rng.next_range(-appearance.mutation_delta_s, appearance.mutation_delta_s),
+        0.0,
+        1.0,
+    )
+    expected_l = _clamp_value(
+        appearance.base_l + appearance_rng.next_range(-appearance.mutation_delta_l, appearance.mutation_delta_l),
+        0.0,
+        1.0,
+    )
+    assert child.appearance_h == approx(expected_h)
+    assert child.appearance_s == approx(expected_s)
+    assert child.appearance_l == approx(expected_l)
+
+    config_b = SimulationConfig(**{**config.__dict__})
+    world_b = World(config_b)
+    births_b = lifecycle.apply_life_cycle(
+        world_b,
+        world_b.agents[0],
+        neighbor_count=0,
+        same_group_neighbors=0,
+        can_create_groups=False,
+    )
+    assert births_b == 1
+    world_b._apply_births()
+    child_b = next(agent for agent in world_b.agents if agent.id != world_b.agents[0].id and agent.generation == 1)
+    assert child.appearance_h == approx(child_b.appearance_h)
+    assert child.appearance_s == approx(child_b.appearance_s)
+    assert child.appearance_l == approx(child_b.appearance_l)
 
 
 def test_tick_metrics_accumulates_zero_population():

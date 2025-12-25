@@ -16,6 +16,7 @@ from ..types.metrics import TickMetrics
 from ..types.snapshot import Snapshot, SnapshotFields, SnapshotMetadata, SnapshotWorld
 from ..utils.math2d import _clamp_length_xy_f, _clamp_value, _heading_from_velocity
 _CLIMATE_RNG_SALT = 0xC0A1F00D5EED1234
+_APPEARANCE_RNG_SALT = 0xA51E0EA7E9CA2311
 
 
 def _derive_stream_seed(seed: int, salt: int) -> int:
@@ -29,6 +30,7 @@ class World:
         self._config = config
         self._rng = DeterministicRng(config.seed)
         self._climate_rng = DeterministicRng(_derive_stream_seed(config.seed, _CLIMATE_RNG_SALT))
+        self._appearance_rng = DeterministicRng(_derive_stream_seed(config.seed, _APPEARANCE_RNG_SALT))
         self._grid = SpatialGrid(config.cell_size)
         self._environment = EnvironmentGrid(config.cell_size, config.environment, config.world_size)
         self._agents: List[Agent] = []
@@ -85,6 +87,7 @@ class World:
         self._group_bases.clear()
         self._rng.reset()
         self._climate_rng.reset()
+        self._appearance_rng.reset()
         self._next_lineage_id = 0
         self._id_to_index.clear()
         self._metrics = None
@@ -320,6 +323,7 @@ class World:
             traits = self._clamp_traits(AgentTraits())
             lineage = self._allocate_lineage_id()
             speed_limit = self._trait_speed_limit(traits)
+            appearance = self._config.appearance
             pos = Vector2(
                 self._rng.next_range(0.0, self._config.world_size),
                 self._rng.next_range(0.0, self._config.world_size),
@@ -338,6 +342,9 @@ class World:
                 lineage_id=lineage,
                 traits=traits,
                 traits_dirty=False,
+                appearance_h=appearance.base_h,
+                appearance_s=appearance.base_s,
+                appearance_l=appearance.base_l,
                 wander_dir=self._rng.next_unit_circle(),
                 wander_time=self._config.species.wander_refresh_seconds,
                 last_desired=velocity.copy(),
@@ -421,6 +428,29 @@ class World:
         mutated.kin_bias += self._rng.next_range(-strength, strength) * evolution.kin_bias_mutation_weight
         return self._clamp_traits(mutated)
 
+    @staticmethod
+    def _wrap_hue(value: float) -> float:
+        return value % 360.0
+
+    def _inherit_appearance(self, parent: Agent) -> tuple[float, float, float]:
+        appearance = self._config.appearance
+        hue = parent.appearance_h
+        saturation = parent.appearance_s
+        lightness = parent.appearance_l
+        if appearance.mutation_chance > 0.0 and self._appearance_rng.next_float() < appearance.mutation_chance:
+            hue = self._wrap_hue(hue + self._appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h))
+            saturation = _clamp_value(
+                saturation + self._appearance_rng.next_range(-appearance.mutation_delta_s, appearance.mutation_delta_s),
+                0.0,
+                1.0,
+            )
+            lightness = _clamp_value(
+                lightness + self._appearance_rng.next_range(-appearance.mutation_delta_l, appearance.mutation_delta_l),
+                0.0,
+                1.0,
+            )
+        return hue, saturation, lightness
+
     def _trait_reproduction_factor(self, traits: AgentTraits) -> float:
         resistance_penalty = 0.7 + 0.3 / max(0.5, traits.disease_resistance)
         speed_penalty = 0.8 + 0.2 / max(0.6, traits.speed)
@@ -459,6 +489,9 @@ class World:
             "generation": agent.generation,
             "trait_speed": agent.traits.speed,
             "appearance_seed": agent.id,
+            "appearance_h": agent.appearance_h,
+            "appearance_s": agent.appearance_s,
+            "appearance_l": agent.appearance_l,
             "importance": 1.0,
         }
 

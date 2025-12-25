@@ -1,7 +1,7 @@
 import * as THREE from 'https://unpkg.com/three@0.164.1/build/three.module.js';
 import { GLTFLoader } from 'https://unpkg.com/three@0.164.1/examples/jsm/loaders/GLTFLoader.js';
 import {
-  computeGroupHue,
+  appearanceBaseHsl,
   elderScaleMultiplier,
   energyToLightness,
   pulseLightnessOffset,
@@ -25,7 +25,6 @@ const maxInstances = 700;
 const modelBaseScale = 1.0;
 const modelYawOffset = 0.0;
 const floorRepeat = 8;
-const colorSaturation = 0.75;
 const ungroupedColor = { hue: 50, saturation: 1.0, lightness: 0.83 };
 const energyVisual = { floor: 0.2, ceiling: 0.9, mid: 10.0, spread: 6.0 };
 const reproductionVisual = {
@@ -135,19 +134,13 @@ function computeScale(agent, now, baseSizeOverride, desire) {
 }
 
 function computeColor(agent, now, desire) {
-  const groupId = Number.isFinite(agent?.group) ? agent.group : -1;
-  if (groupId < 0) {
-    tmpColor.setHSL(
-      ungroupedColor.hue / 360,
-      ungroupedColor.saturation,
-      ungroupedColor.lightness,
-    );
-    return tmpColor;
-  }
-  const baseHue = computeGroupHue(groupId);
-  const lineageHue = Number.isFinite(agent?.lineage_id) ? agent.lineage_id : 0;
-  const hue = (baseHue + (lineageHue % 12) * 0.8) % 360;
-  const baseLightness = energyToLightness(agent.energy, energyVisual);
+  const { hue: baseHue, saturation: baseSaturation, lightness: baseLightness } = appearanceBaseHsl(
+    agent,
+    ungroupedColor,
+  );
+  const hue = ((baseHue % 360) + 360) % 360;
+  const energyLightness = energyToLightness(agent.energy, energyVisual);
+  const energyBaseline = energyToLightness(energyVisual.mid, energyVisual);
   const speedTrait = Number.isFinite(agent?.trait_speed) ? agent.trait_speed : 1;
   const speedFactor = THREE.MathUtils.clamp(speedTrait, 0.5, 1.5);
   const computedDesire = desire ?? reproductionDesire(agent.energy, agent.age, agent.behavior_state, {
@@ -161,8 +154,17 @@ function computeColor(agent, now, desire) {
     phase: agentPhase(agent),
   });
   const speedLightness = THREE.MathUtils.clamp((speedFactor - 1) * 0.12, -0.12, 0.12);
-  const finalLightness = THREE.MathUtils.clamp(baseLightness + pulse + speedLightness, 0.12, 0.92);
-  const traitSaturation = THREE.MathUtils.clamp(colorSaturation * (1 + (speedFactor - 1) * 0.4), 0.4, 1.0);
+  const energyOffset = energyLightness - energyBaseline;
+  const finalLightness = THREE.MathUtils.clamp(
+    baseLightness + energyOffset + pulse + speedLightness,
+    0.12,
+    0.92,
+  );
+  const traitSaturation = THREE.MathUtils.clamp(
+    baseSaturation * (1 + (speedFactor - 1) * 0.4),
+    0.2,
+    1.0,
+  );
   tmpColor.setHSL(hue / 360, traitSaturation, finalLightness);
   return tmpColor;
 }

@@ -46,7 +46,8 @@ Fields currently emitted for each living agent:
 - `lineage_id`: deterministic genetic lineage identifier, independent of social group membership.
 - `generation`: birth generation counter (0 for bootstrap cohort).
 - `trait_speed`: representative inherited trait influencing movement cap and color accenting.
-- `appearance_seed`: stable seed to derive appearance (defaults to the agent id).
+- `appearance_h`, `appearance_s`, `appearance_l`: per-agent genetic appearance values (HSL), used as the base viewer color.
+- `appearance_seed`: legacy stable seed to derive appearance (defaults to the agent id).
 - `importance`: placeholder LOD weight for future load shedding (currently `1.0`).
 
 ## Units and consistency

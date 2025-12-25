@@ -145,6 +145,17 @@ class EvolutionConfig:
 
 
 @dataclass
+class AppearanceConfig:
+    base_h: float = 50.0
+    base_s: float = 1.0
+    base_l: float = 0.83
+    mutation_chance: float = 0.03
+    mutation_delta_h: float = 6.0
+    mutation_delta_s: float = 0.08
+    mutation_delta_l: float = 0.08
+
+
+@dataclass
 class SimulationConfig:
     time_step: float = 1.0 / 50.0
     environment_tick_interval: float = 6.0
@@ -161,6 +172,7 @@ class SimulationConfig:
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
     evolution: EvolutionConfig = field(default_factory=EvolutionConfig)
+    appearance: AppearanceConfig = field(default_factory=AppearanceConfig)
 
     @staticmethod
     def from_yaml(path: Path) -> "SimulationConfig":
@@ -207,7 +219,17 @@ def load_config(raw: dict) -> SimulationConfig:
     )
     evolution_values = {k: v for k, v in evolution_raw.items() if k != "clamp"}
     evolution = EvolutionConfig(clamp=clamp, **evolution_values)
+    appearance = AppearanceConfig(**raw.get("appearance", {}))
     sim_values = {
-        k: v for k, v in raw.items() if k not in {"species", "environment", "feedback", "resource_patches", "evolution"}
+        k: v
+        for k, v in raw.items()
+        if k not in {"species", "environment", "feedback", "resource_patches", "evolution", "appearance"}
     }
-    return SimulationConfig(species=species, environment=env, feedback=feedback, evolution=evolution, **sim_values)
+    return SimulationConfig(
+        species=species,
+        environment=env,
+        feedback=feedback,
+        evolution=evolution,
+        appearance=appearance,
+        **sim_values,
+    )
