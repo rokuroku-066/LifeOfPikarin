@@ -163,7 +163,7 @@
   * 位置：`(x_view, 0, z_view)`
   * 回転：`(0, yaw + MODEL_YAW_OFFSET, 0)`
   * スケール：`computeScale(...) * MODEL_BASE_SCALE`
-  * 色（Bodyのみ）：`computeColor(...)` → `instanceColor`
+  * 色（Bodyのみ）：`computeColor(...)` → `instanceColor`（未所属は `#FFF2AA` 固定、所属は 50° を基準に色相回転）
 * `mesh.count = population` で表示数を制御
 
 ---
