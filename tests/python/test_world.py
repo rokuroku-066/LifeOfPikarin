@@ -406,7 +406,7 @@ def test_appearance_inheritance_is_deterministic_and_mutates():
             base_speed=0.0,
             max_acceleration=0.0,
             metabolism_per_second=0.0,
-            vision_radius=0.0,
+            vision_radius=1.0,
             wander_jitter=0.0,
             reproduction_energy_threshold=1.0,
             adult_age=0.0,
@@ -417,6 +417,9 @@ def test_appearance_inheritance_is_deterministic_and_mutates():
     )
     world = World(config)
     parent = world.agents[0]
+    mate = world.agents[1]
+    parent.appearance_h = 350.0
+    mate.appearance_h = 10.0
 
     births = lifecycle.apply_life_cycle(
         world,
@@ -424,19 +427,22 @@ def test_appearance_inheritance_is_deterministic_and_mutates():
         neighbor_count=0,
         same_group_neighbors=0,
         can_create_groups=False,
+        neighbors=[mate],
+        neighbor_dist_sq=[0.01],
+        paired_ids=set(),
     )
     assert births == 1
     world._apply_births()
 
     assert len(world.agents) == 11
     child = next(agent for agent in world.agents if agent.id != parent.id and agent.generation == 1)
-    assert parent.appearance_h == appearance.base_h
+    assert parent.appearance_h == 350.0
     assert parent.appearance_s == appearance.base_s
     assert parent.appearance_l == appearance.base_l
 
     appearance_rng = DeterministicRng(_derive_stream_seed(config.seed, _APPEARANCE_RNG_SALT))
     appearance_rng.next_float()
-    expected_h = (appearance.base_h + appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h)) % 360
+    expected_h = (0.0 + appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h)) % 360
     expected_s = _clamp_value(
         appearance.base_s + appearance_rng.next_range(-appearance.mutation_delta_s, appearance.mutation_delta_s),
         0.0,
@@ -453,12 +459,19 @@ def test_appearance_inheritance_is_deterministic_and_mutates():
 
     config_b = SimulationConfig(**{**config.__dict__})
     world_b = World(config_b)
+    parent_b = world_b.agents[0]
+    mate_b = world_b.agents[1]
+    parent_b.appearance_h = 350.0
+    mate_b.appearance_h = 10.0
     births_b = lifecycle.apply_life_cycle(
         world_b,
-        world_b.agents[0],
+        parent_b,
         neighbor_count=0,
         same_group_neighbors=0,
         can_create_groups=False,
+        neighbors=[mate_b],
+        neighbor_dist_sq=[0.01],
+        paired_ids=set(),
     )
     assert births_b == 1
     world_b._apply_births()
@@ -466,6 +479,93 @@ def test_appearance_inheritance_is_deterministic_and_mutates():
     assert child.appearance_h == approx(child_b.appearance_h)
     assert child.appearance_s == approx(child_b.appearance_s)
     assert child.appearance_l == approx(child_b.appearance_l)
+
+
+def test_pair_reproduction_requires_mate():
+    feedback = FeedbackConfig(
+        reproduction_base_chance=1.0,
+        base_death_probability_per_second=0.0,
+        age_death_probability_per_second=0.0,
+        density_death_probability_per_neighbor_per_second=0.0,
+        disease_probability_per_neighbor=0.0,
+        stress_drain_per_neighbor=0.0,
+        group_switch_chance=0.0,
+        group_detach_new_group_chance=0.0,
+        group_formation_chance=0.0,
+        group_split_chance=0.0,
+        group_split_new_group_chance=0.0,
+        group_birth_seed_chance=0.0,
+        group_mutation_chance=0.0,
+    )
+    config = SimulationConfig(
+        seed=11,
+        time_step=1.0,
+        initial_population=10,
+        max_population=11,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=1.0,
+            wander_jitter=0.0,
+            reproduction_energy_threshold=1.0,
+            adult_age=0.0,
+        ),
+        feedback=feedback,
+        evolution=EvolutionConfig(enabled=False),
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+    )
+    world = World(config)
+    parent = world.agents[0]
+    parent.energy = 5.0
+    parent.age = 1.0
+
+    births = lifecycle.apply_life_cycle(
+        world,
+        parent,
+        neighbor_count=0,
+        same_group_neighbors=0,
+        can_create_groups=False,
+        neighbors=[],
+        neighbor_dist_sq=[],
+        paired_ids=set(),
+    )
+
+    assert births == 0
+    assert len(world._birth_queue) == 0
+
+
+def test_pair_lineage_inheritance_is_deterministic():
+    evolution = EvolutionConfig(enabled=True, lineage_mutation_chance=0.0)
+    config = SimulationConfig(seed=17, initial_population=0, evolution=evolution)
+    world = World(config)
+    first = Agent(
+        id=0,
+        generation=0,
+        group_id=-1,
+        position=Vector2(),
+        velocity=Vector2(),
+        energy=1.0,
+        age=1.0,
+        state=AgentState.WANDER,
+        lineage_id=3,
+    )
+    second = Agent(
+        id=1,
+        generation=0,
+        group_id=-1,
+        position=Vector2(),
+        velocity=Vector2(),
+        energy=1.0,
+        age=1.0,
+        state=AgentState.WANDER,
+        lineage_id=9,
+    )
+
+    expected_rng = DeterministicRng(config.seed)
+    expected_lineage = first.lineage_id if expected_rng.next_float() < 0.5 else second.lineage_id
+
+    assert world._inherit_lineage_pair(first, second) == expected_lineage
 
 
 def test_tick_metrics_accumulates_zero_population():

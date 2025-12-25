@@ -26,7 +26,7 @@
 - **グリッド**: `cell_size=5.5` の SpatialGrid を共有（環境も同セル幅）。
 - **初期個体**: `initial_population=200` をランダム配置・速度でブートストラップ。`max_population=700` を超えてスポーンしない。
 - **エージェント状態**: 位置/速度/heading、エネルギー、年齢、ストレス、グループ ID（未所属は -1）、ワンダー方向と残時間、孤立秒数、グループクールダウン。
-- **形質（`AgentTraits`）**: `speed` / `metabolism` / `disease_resistance` / `fertility` に加え `sociality` / `territoriality` / `loyalty` / `founder` / `kin_bias`。`EvolutionConfig` に従い変異・クランプし、`mutation_strength` と各ウェイトで揺らぐ。系譜は `lineage_id` を持ち、必要に応じて新規割り当て。
+- **形質（`AgentTraits`）**: `speed` / `metabolism` / `disease_resistance` / `fertility` に加え `sociality` / `territoriality` / `loyalty` / `founder` / `kin_bias`。`EvolutionConfig` に従い変異・クランプし、`trait_mutation_chance` と `mutation_strength`、各ウェイトで揺らぐ。系譜は `lineage_id` を持ち、必要に応じて新規割り当て。
 - **サイズ算出**: 成熟度（`adult_age`）とエネルギーを 0.4〜1.0 のスケールにマップし、スナップショットへ出力。
 
 ## 3. 1 tick の処理フロー (`World.step`)
@@ -64,8 +64,8 @@
 - **代謝とストレス**: 基礎代謝＋速度コストを trait スケールで減算し、高エネルギー超過分に追加代謝を課す。近傍密度に比例したストレス消耗。
 - **過密ペナルティ**: `local_density_soft_cap` 超過でストレス蓄積と疾病確率上昇（`disease_resistance` で低減）。疾病死・エネルギー枯渇・寿命超過・確率ハザードで死亡した場合、食料を環境へ返還。
 - **摂食**: そのセルの食料を `food_consumption_rate` まで消費しエネルギー獲得。
-- **繁殖**: 初期人口が十分な場合のみ許可。エネルギー・年齢・人口上限を満たし、近傍密度と同盟人数で確率が減衰。形質係数（`fertility`、`speed`、`disease_resistance`）を掛け合わせた繁殖確率で判定し、成功するとエネルギーを子へ半分譲渡＋出産コスト支払い。
-- **出生**: 子は親位置近傍に生成。進化が有効なら形質をコピー後に変異し、系譜も一定確率で分岐。所属グループは変異ロジックに従い付与され、出生地点へフェロモンをペンディング。
+- **繁殖**: 初期人口が十分な場合のみ許可。エネルギー・年齢・人口上限を満たした個体が近傍からペアを選び、近傍密度と同盟人数で確率が減衰する。形質係数（`fertility`、`speed`、`disease_resistance`）は両親の幾何平均で反映し、成功すると両親がエネルギーを分担して子へ譲渡＋出産コスト支払い。
+- **出生**: 子は親の中間地点近傍に生成。形質は両親平均に変異を加え、系譜は片親を継承し一定確率で新規化。所属グループは片親から 50/50 継承して変異ロジックを適用し、出生地点へフェロモンをペンディング。
 - **ハザード**: 基礎＋年齢＋近傍密度に応じた確率死を毎 tick 判定。死亡・出生ともに後段で環境フィールドへ反映。
 
 ## 7. 環境フィールド

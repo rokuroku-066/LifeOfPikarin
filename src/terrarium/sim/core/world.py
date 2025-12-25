@@ -141,6 +141,7 @@ class World:
         neighbor_checks = 0
         births = 0
         deaths = 0
+        paired_ids: Set[int] = set()
 
         vision_cell_offsets = self._vision_cell_offsets
         vision_radius_sq = self._vision_radius_sq
@@ -251,8 +252,11 @@ class World:
                 neighbor_count,
                 same_group_neighbors,
                 can_form_groups,
-                current_population,
-                sim_time,
+                neighbors=self._neighbor_agents,
+                neighbor_dist_sq=neighbor_dist_sq,
+                paired_ids=paired_ids,
+                population=current_population,
+                sim_time=sim_time,
                 traits=traits,
             )
             if agent.state == AgentState.FLEE or sensed_danger:
@@ -417,20 +421,124 @@ class World:
         strength = evolution.mutation_strength
         if strength <= 0.0:
             return self._clamp_traits(mutated)
-        mutated.speed += self._rng.next_range(-strength, strength) * evolution.speed_mutation_weight
-        mutated.metabolism += self._rng.next_range(-strength, strength) * evolution.metabolism_mutation_weight
-        mutated.disease_resistance += self._rng.next_range(-strength, strength) * evolution.disease_resistance_mutation_weight
-        mutated.fertility += self._rng.next_range(-strength, strength) * evolution.fertility_mutation_weight
-        mutated.sociality += self._rng.next_range(-strength, strength) * evolution.sociality_mutation_weight
-        mutated.territoriality += self._rng.next_range(-strength, strength) * evolution.territoriality_mutation_weight
-        mutated.loyalty += self._rng.next_range(-strength, strength) * evolution.loyalty_mutation_weight
-        mutated.founder += self._rng.next_range(-strength, strength) * evolution.founder_mutation_weight
-        mutated.kin_bias += self._rng.next_range(-strength, strength) * evolution.kin_bias_mutation_weight
+        chance = max(0.0, min(1.0, evolution.trait_mutation_chance))
+        if self._rng.next_float() < chance:
+            mutated.speed += self._rng.next_range(-strength, strength) * evolution.speed_mutation_weight
+        if self._rng.next_float() < chance:
+            mutated.metabolism += self._rng.next_range(-strength, strength) * evolution.metabolism_mutation_weight
+        if self._rng.next_float() < chance:
+            mutated.disease_resistance += (
+                self._rng.next_range(-strength, strength) * evolution.disease_resistance_mutation_weight
+            )
+        if self._rng.next_float() < chance:
+            mutated.fertility += self._rng.next_range(-strength, strength) * evolution.fertility_mutation_weight
+        if self._rng.next_float() < chance:
+            mutated.sociality += self._rng.next_range(-strength, strength) * evolution.sociality_mutation_weight
+        if self._rng.next_float() < chance:
+            mutated.territoriality += (
+                self._rng.next_range(-strength, strength) * evolution.territoriality_mutation_weight
+            )
+        if self._rng.next_float() < chance:
+            mutated.loyalty += self._rng.next_range(-strength, strength) * evolution.loyalty_mutation_weight
+        if self._rng.next_float() < chance:
+            mutated.founder += self._rng.next_range(-strength, strength) * evolution.founder_mutation_weight
+        if self._rng.next_float() < chance:
+            mutated.kin_bias += self._rng.next_range(-strength, strength) * evolution.kin_bias_mutation_weight
         return self._clamp_traits(mutated)
 
     @staticmethod
     def _wrap_hue(value: float) -> float:
         return value % 360.0
+
+    @staticmethod
+    def _circular_mean_deg(first: float, second: float) -> float:
+        rad_first = math.radians(first)
+        rad_second = math.radians(second)
+        x = math.cos(rad_first) + math.cos(rad_second)
+        y = math.sin(rad_first) + math.sin(rad_second)
+        if abs(x) < 1e-8 and abs(y) < 1e-8:
+            return (first + second) * 0.5 % 360.0
+        return math.degrees(math.atan2(y, x)) % 360.0
+
+    def _inherit_traits_pair(self, first: AgentTraits, second: AgentTraits) -> AgentTraits:
+        averaged = AgentTraits(
+            speed=(first.speed + second.speed) * 0.5,
+            metabolism=(first.metabolism + second.metabolism) * 0.5,
+            disease_resistance=(first.disease_resistance + second.disease_resistance) * 0.5,
+            fertility=(first.fertility + second.fertility) * 0.5,
+            sociality=(first.sociality + second.sociality) * 0.5,
+            territoriality=(first.territoriality + second.territoriality) * 0.5,
+            loyalty=(first.loyalty + second.loyalty) * 0.5,
+            founder=(first.founder + second.founder) * 0.5,
+            kin_bias=(first.kin_bias + second.kin_bias) * 0.5,
+        )
+        if not self._config.evolution.enabled:
+            return self._clamp_traits(averaged)
+        evolution = self._config.evolution
+        strength = evolution.mutation_strength
+        if strength <= 0.0:
+            return self._clamp_traits(averaged)
+        chance = max(0.0, min(1.0, evolution.trait_mutation_chance))
+        if self._rng.next_float() < chance:
+            averaged.speed += self._rng.next_range(-strength, strength) * evolution.speed_mutation_weight
+        if self._rng.next_float() < chance:
+            averaged.metabolism += self._rng.next_range(-strength, strength) * evolution.metabolism_mutation_weight
+        if self._rng.next_float() < chance:
+            averaged.disease_resistance += (
+                self._rng.next_range(-strength, strength) * evolution.disease_resistance_mutation_weight
+            )
+        if self._rng.next_float() < chance:
+            averaged.fertility += self._rng.next_range(-strength, strength) * evolution.fertility_mutation_weight
+        if self._rng.next_float() < chance:
+            averaged.sociality += self._rng.next_range(-strength, strength) * evolution.sociality_mutation_weight
+        if self._rng.next_float() < chance:
+            averaged.territoriality += (
+                self._rng.next_range(-strength, strength) * evolution.territoriality_mutation_weight
+            )
+        if self._rng.next_float() < chance:
+            averaged.loyalty += self._rng.next_range(-strength, strength) * evolution.loyalty_mutation_weight
+        if self._rng.next_float() < chance:
+            averaged.founder += self._rng.next_range(-strength, strength) * evolution.founder_mutation_weight
+        if self._rng.next_float() < chance:
+            averaged.kin_bias += self._rng.next_range(-strength, strength) * evolution.kin_bias_mutation_weight
+        return self._clamp_traits(averaged)
+
+    def _inherit_appearance_pair(self, first: Agent, second: Agent) -> tuple[float, float, float]:
+        appearance = self._config.appearance
+        hue = self._circular_mean_deg(first.appearance_h, second.appearance_h)
+        saturation = (first.appearance_s + second.appearance_s) * 0.5
+        lightness = (first.appearance_l + second.appearance_l) * 0.5
+        if appearance.mutation_chance > 0.0 and self._appearance_rng.next_float() < appearance.mutation_chance:
+            hue = self._wrap_hue(
+                hue + self._appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h)
+            )
+            saturation = _clamp_value(
+                saturation
+                + self._appearance_rng.next_range(-appearance.mutation_delta_s, appearance.mutation_delta_s),
+                0.0,
+                1.0,
+            )
+            lightness = _clamp_value(
+                lightness + self._appearance_rng.next_range(-appearance.mutation_delta_l, appearance.mutation_delta_l),
+                0.0,
+                1.0,
+            )
+        return hue, saturation, lightness
+
+    def _inherit_lineage_pair(self, first: Agent, second: Agent) -> int:
+        lineage = first.lineage_id if self._rng.next_float() < 0.5 else second.lineage_id
+        if (
+            self._config.evolution.enabled
+            and self._config.evolution.lineage_mutation_chance > 0.0
+            and self._rng.next_float() < self._config.evolution.lineage_mutation_chance
+        ):
+            return self._allocate_lineage_id()
+        return lineage
+
+    def _inherit_group_pair(self, first: Agent, second: Agent) -> int:
+        if first.group_id == second.group_id:
+            return first.group_id
+        return first.group_id if self._rng.next_float() < 0.5 else second.group_id
 
     def _inherit_appearance(self, parent: Agent) -> tuple[float, float, float]:
         appearance = self._config.appearance
