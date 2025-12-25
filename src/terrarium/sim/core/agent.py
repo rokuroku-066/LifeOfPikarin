@@ -39,6 +39,9 @@ class Agent:
     state: AgentState
     lineage_id: int = 0
     traits: AgentTraits = field(default_factory=AgentTraits)
+    appearance_h: float = 50.0
+    appearance_s: float = 1.0
+    appearance_l: float = 0.83
     traits_dirty: bool = True
     alive: bool = True
     stress: float = 0.0

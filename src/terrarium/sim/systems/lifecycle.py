@@ -134,6 +134,7 @@ def apply_life_cycle(
                 ):
                     child_lineage = world._allocate_lineage_id()
                 child_traits = world._mutate_traits(traits)
+            child_appearance_h, child_appearance_s, child_appearance_l = world._inherit_appearance(agent)
             child_velocity = _clamp_length(agent.velocity, world._trait_speed_limit(child_traits))
             child = Agent(
                 id=world._next_id,
@@ -148,6 +149,9 @@ def apply_life_cycle(
                 lineage_id=child_lineage,
                 traits=child_traits,
                 traits_dirty=False,
+                appearance_h=child_appearance_h,
+                appearance_s=child_appearance_s,
+                appearance_l=child_appearance_l,
                 group_cooldown=child_cooldown,
                 last_desired=child_velocity.copy(),
             )

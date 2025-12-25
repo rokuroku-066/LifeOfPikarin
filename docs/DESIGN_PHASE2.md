@@ -163,16 +163,17 @@
   * 位置：`(x_view, 0, z_view)`
   * 回転：`(0, yaw + MODEL_YAW_OFFSET, 0)`
   * スケール：`computeScale(...) * MODEL_BASE_SCALE`
-  * 色（Bodyのみ）：`computeColor(...)` → `instanceColor`（未所属は `#FFF2AA` 固定、所属は 50° を基準に色相回転）
+  * 色（Bodyのみ）：`computeColor(...)` → `instanceColor`（遺伝子由来の `appearance_*` をベースに、エネルギー/繁殖/速度の補正を重ねる）
 * `mesh.count = population` で表示数を制御
 
 ---
 
 ## 9. スナップショット要件（Sim側変更なし）📡
 
-Viewerが必要とする最低フィールド（現状のままでOK）：
+Viewerが必要とする最低フィールド：
 
 * `agents[].id, x, y, vx, vy, heading, size, energy, age, group, lineage_id, trait_speed, behavior_state`
+* `agents[].appearance_h, appearance_s, appearance_l`（遺伝子由来のHSL）
 * `metrics.population, metrics.average_energy`（任意：見た目調整に利用）
 
 将来拡張予約（Phase 2では未使用）：
@@ -208,7 +209,7 @@ Viewerが必要とする最低フィールド（現状のままでOK）：
 
 * 斜め固定カメラで **床+壁2面**が常に視界に入り、箱庭コーナーが成立
 * ぴかりんが **200体以上**表示され、補間で滑らかに移動
-* ボディ色は群れ/エネルギーで変化し、**顔は変色しない**
+* ボディ色は遺伝子（appearance）+エネルギー/繁殖/速度の補正で変化し、**顔は変色しない**
 * `max_population=700` でもクラッシュせず動く（fpsは端末相応でOK）
 
 ---

@@ -22,6 +22,20 @@ function clamp01(value) {
   return value;
 }
 
+export function appearanceBaseHsl(agent, fallback = { hue: 50, saturation: 1.0, lightness: 0.83 }) {
+  const rawHue = Number.isFinite(agent?.appearance_h) ? agent.appearance_h : fallback.hue;
+  const rawSaturation = Number.isFinite(agent?.appearance_s)
+    ? agent.appearance_s
+    : fallback.saturation;
+  const rawLightness = Number.isFinite(agent?.appearance_l) ? agent.appearance_l : fallback.lightness;
+  const hue = ((rawHue % 360) + 360) % 360;
+  return {
+    hue,
+    saturation: clamp01(rawSaturation),
+    lightness: clamp01(rawLightness),
+  };
+}
+
 /**
  * Map an energy value onto an HSL lightness in [floor, ceiling].
  * Uses a smooth tanh curve so mid-range energies are easy to distinguish while
