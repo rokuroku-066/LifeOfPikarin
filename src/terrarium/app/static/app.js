@@ -1,5 +1,5 @@
 import * as THREE from 'https://unpkg.com/three@0.164.1/build/three.module.js';
-import { OrbitControls } from 'https://unpkg.com/three@0.164.1/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader } from 'https://unpkg.com/three@0.164.1/examples/jsm/loaders/GLTFLoader.js';
 import {
   computeGroupHue,
   elderScaleMultiplier,
@@ -11,7 +11,6 @@ import {
 const container = document.getElementById('view-container');
 const tickSpan = document.getElementById('tick');
 const populationSpan = document.getElementById('population');
-const trackedSpan = document.getElementById('tracked');
 const startBtn = document.getElementById('start');
 const stopBtn = document.getElementById('stop');
 const resetBtn = document.getElementById('reset');
@@ -21,6 +20,11 @@ const connectionBadge = document.getElementById('connection');
 
 const worldSize = 100;
 const halfWorld = worldSize / 2;
+const wallHeight = worldSize * 0.45;
+const maxInstances = 700;
+const modelBaseScale = 1.0;
+const modelYawOffset = 0.0;
+const floorRepeat = 8;
 const colorSaturation = 0.75;
 const energyVisual = { floor: 0.2, ceiling: 0.9, mid: 10.0, spread: 6.0 };
 const reproductionVisual = {
@@ -40,10 +44,8 @@ const ageVisual = {
   jitterFrequency: 0.85,
 };
 
-const baseLeftSplitRatio = 0.55;
-const rightRowSplit = 0.5;
-document.documentElement.style.setProperty('--left-split', `${baseLeftSplitRatio * 100}%`);
-document.documentElement.style.setProperty('--right-row-split', `${rightRowSplit * 100}%`);
+const assetBase = window.location.protocol === 'file:' ? 'assets' : '/static/assets';
+const assetUrl = (name) => `${assetBase}/${name}`;
 
 let socket = null;
 let prevSnapshot = null;
@@ -54,21 +56,16 @@ const fallbackSnapshotInterval = 34;
 
 let renderer = null;
 let scene = null;
-const cameras = { top: null, angle: null, pov: null };
-let angleControls = null;
-let viewports = null;
+let camera = null;
 let layoutDirty = true;
 
-let instancedAgents = null;
-let agentGeometry = null;
+let instancedBody = null;
+let instancedFace = null;
+let instancingReady = false;
+
 const dummy = new THREE.Object3D();
 const tmpColor = new THREE.Color();
-const tmpDir = new THREE.Vector3();
-const tmpPos = new THREE.Vector3();
-const tmpLook = new THREE.Vector3();
 
-let trackedAgentId = null;
-let lastTrackedYaw = 0;
 const targetFps = 45;
 const minFrameInterval = 1000 / targetFps;
 let lastRenderTime = 0;
@@ -169,30 +166,7 @@ function updateLayoutMetrics() {
 function measureContainer() {
   const width = Math.max(container.clientWidth ?? 0, 1);
   const height = Math.max(container.clientHeight ?? 0, 1);
-  return {
-    width,
-    height,
-  };
-}
-
-function computeViewports() {
-  const { width, height } = measureContainer();
-  const clampedLeftWidth = Math.min(Math.max(Math.round(width * baseLeftSplitRatio), 1), Math.max(width - 1, 1));
-  const clampedTopHeight = Math.min(Math.max(Math.round(height * rightRowSplit), 1), Math.max(height - 1, 1));
-  const rightWidth = Math.max(width - clampedLeftWidth, 1);
-  const bottomHeight = Math.max(height - clampedTopHeight, 1);
-
-  document.documentElement.style.setProperty('--left-split', `${baseLeftSplitRatio * 100}%`);
-  document.documentElement.style.setProperty('--left-split-px', `${clampedLeftWidth}px`);
-  document.documentElement.style.setProperty('--right-row-split', `${rightRowSplit * 100}%`);
-  document.documentElement.style.setProperty('--right-row-split-px', `${clampedTopHeight}px`);
-
-  return {
-    full: { x: 0, y: 0, width, height },
-    topDown: { x: 0, y: 0, width: clampedLeftWidth, height },
-    angle: { x: clampedLeftWidth, y: 0, width: rightWidth, height: clampedTopHeight },
-    pov: { x: clampedLeftWidth, y: clampedTopHeight, width: rightWidth, height: bottomHeight },
-  };
+  return { width, height };
 }
 
 function initThree() {
@@ -206,52 +180,17 @@ function initThree() {
   const pixelRatio = Math.min(window.devicePixelRatio ?? 1, 1.3);
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(width, height, false);
-  renderer.autoClear = false;
-  renderer.setScissorTest(true);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = false;
   container.appendChild(renderer.domElement);
 
-  cameras.top = new THREE.OrthographicCamera(-halfWorld, halfWorld, halfWorld, -halfWorld, 0.1, 2000);
-  cameras.top.position.set(0, worldSize * 1.1, 0);
-  cameras.top.up.set(0, 0, -1);
-  cameras.top.lookAt(0, 0, 0);
+  camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 2000);
+  camera.position.set(halfWorld * 0.55, worldSize * 0.22, halfWorld * 0.65);
+  camera.lookAt(0, 0, 0);
 
-  cameras.angle = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
-  const edgeViewHeight = worldSize * 0.08;
-  const edgeViewDepth = halfWorld + worldSize * 0.1;
-  cameras.angle.position.set(0, edgeViewHeight, edgeViewDepth);
-  cameras.angle.lookAt(0, 0, 0);
-
-  cameras.pov = new THREE.PerspectiveCamera(70, 1, 0.05, 500);
-  cameras.pov.position.set(0, 3, -halfWorld * 0.2);
-  cameras.pov.lookAt(0, 0, 0);
-
-  angleControls = new OrbitControls(cameras.angle, renderer.domElement);
-  angleControls.enableRotate = true;
-  angleControls.screenSpacePanning = true;
-  angleControls.zoomSpeed = 1.1;
-  angleControls.minPolarAngle = 0.35;
-  angleControls.maxPolarAngle = Math.PI / 2.1;
-  angleControls.target.set(0, 0, 0);
-  angleControls.update();
-
-  const grid = new THREE.GridHelper(worldSize, 10, 0x333333, 0x222222);
-  scene.add(grid);
-
-  const groundGeo = new THREE.PlaneGeometry(worldSize, worldSize);
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotateX(-Math.PI / 2);
-  ground.receiveShadow = true;
-  scene.add(ground);
-
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
-  scene.add(ambientLight);
-
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
-  directionalLight.position.set(worldSize, worldSize * 1.5, worldSize);
-  directionalLight.castShadow = false;
-  scene.add(directionalLight);
+  initBackground();
+  initLights();
+  initPikarinInstancing();
 
   window.addEventListener('resize', () => {
     layoutDirty = true;
@@ -262,39 +201,159 @@ function initThree() {
   requestAnimationFrame(animate);
 }
 
+function initBackground() {
+  const textureLoader = new THREE.TextureLoader();
+
+  const groundTexture = textureLoader.load(assetUrl('ground.png'));
+  groundTexture.colorSpace = THREE.SRGBColorSpace;
+  groundTexture.wrapS = THREE.RepeatWrapping;
+  groundTexture.wrapT = THREE.RepeatWrapping;
+  groundTexture.repeat.set(floorRepeat, floorRepeat);
+
+  const wallBackTexture = textureLoader.load(assetUrl('wall_back.png'));
+  wallBackTexture.colorSpace = THREE.SRGBColorSpace;
+
+  const wallSideTexture = textureLoader.load(assetUrl('wall_side.png'));
+  wallSideTexture.colorSpace = THREE.SRGBColorSpace;
+
+  const groundGeo = new THREE.PlaneGeometry(worldSize, worldSize);
+  const groundMat = new THREE.MeshStandardMaterial({ map: groundTexture, roughness: 0.9 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotateX(-Math.PI / 2);
+  ground.position.y = 0;
+  scene.add(ground);
+
+  const wallGeo = new THREE.PlaneGeometry(worldSize, wallHeight);
+  const backMat = new THREE.MeshStandardMaterial({ map: wallBackTexture, roughness: 0.9 });
+  const backWall = new THREE.Mesh(wallGeo, backMat);
+  backWall.position.set(0, wallHeight / 2, -halfWorld - 0.001);
+  scene.add(backWall);
+
+  const sideMat = new THREE.MeshStandardMaterial({ map: wallSideTexture, roughness: 0.9 });
+  const sideWall = new THREE.Mesh(wallGeo, sideMat);
+  sideWall.position.set(-halfWorld - 0.001, wallHeight / 2, 0);
+  sideWall.rotation.y = -Math.PI / 2;
+  scene.add(sideWall);
+}
+
+function initLights() {
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+  scene.add(ambientLight);
+
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  directionalLight.position.set(worldSize, worldSize * 1.5, worldSize);
+  directionalLight.castShadow = false;
+  scene.add(directionalLight);
+}
+
+function initPikarinInstancing() {
+  const loader = new GLTFLoader();
+  loader.load(
+    assetUrl('pikarin.glb'),
+    (gltf) => {
+      const meshes = [];
+      gltf.scene.traverse((child) => {
+        if (child.isMesh) meshes.push(child);
+      });
+
+      const bodyMesh = meshes.find((mesh) => /body/i.test(mesh.name)) ?? meshes[0] ?? null;
+      const faceMesh = meshes.find((mesh) => /face/i.test(mesh.name)) ?? meshes[1] ?? null;
+
+      if (!bodyMesh || !faceMesh) {
+        console.warn('pikarin.glb missing body/face meshes; using fallback geometry.');
+        initFallbackInstancing();
+        return;
+      }
+
+      const bodyGeometry = bodyMesh.geometry.clone();
+      const faceGeometry = faceMesh.geometry.clone();
+      const bodyMaterial = normalizeMaterial(bodyMesh.material, { vertexColors: true });
+      const faceMaterial = normalizeMaterial(faceMesh.material, {
+        vertexColors: false,
+        transparent: true,
+        alphaTest: 0.5,
+      });
+
+      initInstancedMeshes(bodyGeometry, bodyMaterial, faceGeometry, faceMaterial);
+    },
+    undefined,
+    (error) => {
+      console.warn('Failed to load pikarin.glb, falling back to dummy geometry.', error);
+      initFallbackInstancing();
+    },
+  );
+}
+
+function normalizeMaterial(material, { vertexColors, transparent = false, alphaTest = 0 } = {}) {
+  let mat = material;
+  if (Array.isArray(mat)) {
+    mat = mat[0];
+  }
+  let normalized = mat ? mat.clone() : new THREE.MeshStandardMaterial({ color: 0xffffff });
+  if (!(normalized instanceof THREE.MeshStandardMaterial)) {
+    normalized = new THREE.MeshStandardMaterial({ color: normalized.color ?? new THREE.Color(0xffffff) });
+  }
+  normalized.vertexColors = vertexColors;
+  normalized.transparent = transparent;
+  normalized.alphaTest = alphaTest;
+  if (normalized.map) {
+    normalized.map.colorSpace = THREE.SRGBColorSpace;
+    normalized.map.needsUpdate = true;
+  }
+  return normalized;
+}
+
+function initFallbackInstancing() {
+  const bodyGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.8 });
+
+  const faceGeometry = new THREE.PlaneGeometry(0.45, 0.45);
+  faceGeometry.translate(0, 0.1, 0.41);
+  const faceMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.6,
+    transparent: true,
+    opacity: 0.9,
+  });
+
+  initInstancedMeshes(bodyGeometry, bodyMaterial, faceGeometry, faceMaterial);
+}
+
+function initInstancedMeshes(bodyGeometry, bodyMaterial, faceGeometry, faceMaterial) {
+  instancedBody?.geometry.dispose();
+  instancedBody?.material.dispose();
+  instancedFace?.geometry.dispose();
+  instancedFace?.material.dispose();
+  if (instancedBody) scene.remove(instancedBody);
+  if (instancedFace) scene.remove(instancedFace);
+
+  instancedBody = new THREE.InstancedMesh(bodyGeometry, bodyMaterial, maxInstances);
+  instancedBody.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  instancedBody.castShadow = false;
+
+  const colorAttr = new THREE.InstancedBufferAttribute(new Float32Array(maxInstances * 3), 3);
+  colorAttr.setUsage(THREE.DynamicDrawUsage);
+  instancedBody.instanceColor = colorAttr;
+  instancedBody.geometry.setAttribute('color', colorAttr);
+
+  instancedFace = new THREE.InstancedMesh(faceGeometry, faceMaterial, maxInstances);
+  instancedFace.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  instancedFace.castShadow = false;
+
+  scene.add(instancedBody);
+  scene.add(instancedFace);
+  instancingReady = true;
+}
+
 function ensureLayout() {
-  if (!renderer) return;
+  if (!renderer || !camera) return;
   if (!layoutDirty) return;
   updateLayoutMetrics();
-  viewports = computeViewports();
-  renderer.setSize(viewports.full.width, viewports.full.height, false);
-  setTopCameraProjection(viewports.topDown);
-  setAngleCameraProjection(viewports.angle);
+  const { width, height } = measureContainer();
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
   layoutDirty = false;
-}
-
-function setTopCameraProjection(viewport) {
-  if (!cameras.top) return;
-  const aspect = viewport.width / viewport.height;
-  const viewHeight = worldSize * 1.2;
-  const viewWidth = viewHeight * aspect;
-  cameras.top.left = -viewWidth / 2;
-  cameras.top.right = viewWidth / 2;
-  cameras.top.top = viewHeight / 2;
-  cameras.top.bottom = -viewHeight / 2;
-  cameras.top.updateProjectionMatrix();
-}
-
-function setAngleCameraProjection(viewport) {
-  if (!cameras.angle) return;
-  cameras.angle.aspect = viewport.width / viewport.height;
-  cameras.angle.updateProjectionMatrix();
-}
-
-function setPovCameraProjection(viewport) {
-  if (!cameras.pov) return;
-  cameras.pov.aspect = viewport.width / viewport.height;
-  cameras.pov.updateProjectionMatrix();
 }
 
 function animate(now) {
@@ -307,9 +366,6 @@ function animate(now) {
   lastRenderTime = now;
   const frameStart = performance.now();
   updateView(now);
-  if (angleControls) {
-    angleControls.update();
-  }
   lastRenderMs = performance.now() - frameStart;
   adjustPixelRatioIfNeeded();
 }
@@ -390,81 +446,12 @@ speedSlider.addEventListener('input', () => {
   sendControl('/api/control/speed', { multiplier: parseFloat(speedSlider.value) });
 });
 
-function ensureInstancedAgents(count) {
-  if (instancedAgents && instancedAgents.count >= count) {
-    instancedAgents.count = count;
-    ensureInstanceColor(instancedAgents, count);
-    return instancedAgents;
-  }
-
-  if (instancedAgents) {
-    scene.remove(instancedAgents);
-    instancedAgents.material.dispose();
-    instancedAgents = null;
-  }
-
-  if (count === 0) {
-    return null;
-  }
-
-  if (!agentGeometry) {
-    agentGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-  }
-
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.1, roughness: 0.8 });
-  instancedAgents = new THREE.InstancedMesh(agentGeometry, material, count);
-  instancedAgents.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  instancedAgents.castShadow = false;
-  scene.add(instancedAgents);
-  ensureInstanceColor(instancedAgents, count);
-  return instancedAgents;
-}
-
-function ensureInstanceColor(mesh, count) {
-  const existing = mesh.instanceColor;
-  if (existing && existing.count >= count) {
-    mesh.geometry.setAttribute('color', existing);
-    return existing;
-  }
-
-  const colorAttr = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
-  colorAttr.setUsage(THREE.DynamicDrawUsage);
-  mesh.instanceColor = colorAttr;
-  mesh.geometry.setAttribute('color', colorAttr);
-  mesh.material.needsUpdate = true;
-  return colorAttr;
-}
-
-function selectTrackedAgent(snapshot) {
-  if (!snapshot || snapshot.agents.length === 0) {
-    trackedAgentId = null;
-    return null;
-  }
-  if (trackedAgentId) {
-    const current = snapshot.agentsById.get(trackedAgentId);
-    if (current) return current;
-  }
-  const idx = Math.floor(Math.random() * snapshot.agents.length);
-  const choice = snapshot.agents[idx];
-  trackedAgentId = choice?.id ?? null;
-  return choice ?? null;
-}
-
-function updateTrackedUi(agent) {
-  if (!trackedSpan) return;
-  if (!agent) {
-    trackedSpan.textContent = 'POV: --';
-    return;
-  }
-  trackedSpan.textContent = `POV: #${agent.id}`;
-}
-
 function updateView(now) {
-  if (!scene || !renderer) return;
+  if (!scene || !renderer || !camera) return;
   ensureLayout();
 
   if (!nextSnapshot) {
-    renderViews(null);
+    renderer.render(scene, camera);
     return;
   }
 
@@ -481,69 +468,55 @@ function updateView(now) {
   tickSpan.textContent = `tick: ${Math.round(interpTick)}`;
   populationSpan.textContent = `pop: ${currentPopulation}`;
 
-  const previousTrackedId = trackedAgentId;
-  const trackedAgent = selectTrackedAgent(nextSnapshot);
-  const trackedChanged = previousTrackedId !== trackedAgentId;
-  if (trackedChanged && trackedAgent) {
-    lastTrackedYaw = trackedAgent.heading ?? lastTrackedYaw ?? 0;
-  }
-  let trackedPose = null;
-
-  const mesh = ensureInstancedAgents(nextSnapshot.agents.length);
-  if (mesh) {
-    mesh.count = nextSnapshot.agents.length;
-    const colorAttr = ensureInstanceColor(mesh, mesh.count);
-    const colors = colorAttr.array;
-
-    for (let i = 0; i < nextSnapshot.agents.length; i += 1) {
-      const agent = nextSnapshot.agents[i];
-      const prevAgent = prevAgentsById?.get(agent.id) ?? agent;
-      const x = THREE.MathUtils.lerp(prevAgent.x, agent.x, alpha) - halfWorld;
-      const z = THREE.MathUtils.lerp(prevAgent.y, agent.y, alpha) - halfWorld;
-      const vx = THREE.MathUtils.lerp(prevAgent.vx ?? 0, agent.vx ?? 0, alpha);
-      const vy = THREE.MathUtils.lerp(prevAgent.vy ?? 0, agent.vy ?? 0, alpha);
-      const prevHeading = prevAgent.heading ?? Math.atan2(prevAgent.vx ?? 0, prevAgent.vy ?? 0);
-      const nextHeading = agent.heading ?? Math.atan2(agent.vx ?? 0, agent.vy ?? 0);
-      const yaw = lerpHeading(prevHeading, nextHeading, alpha);
-      const desire = reproductionDesire(agent.energy, agent.age, agent.behavior_state, {
-        reproductionThreshold: reproductionVisual.threshold,
-        energySoftCap: reproductionVisual.softCap,
-        adultAge: reproductionVisual.adultAge,
-      });
-      const prevSize = Number.isFinite(prevAgent.size) ? prevAgent.size : agent.size ?? 0.8;
-      const nextSize = Number.isFinite(agent.size) ? agent.size : prevSize;
-      const blendedSize = THREE.MathUtils.lerp(prevSize, nextSize, alpha);
-      const scale = computeScale(agent, now, blendedSize, desire);
-
-      dummy.position.set(x, 0, z);
-      dummy.scale.set(scale, scale, scale);
-      dummy.rotation.set(0, yaw, 0);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-
-      const color = computeColor(agent, now, desire);
-      const base = i * 3;
-      colors[base] = color.r;
-      colors[base + 1] = color.g;
-      colors[base + 2] = color.b;
-
-      if (trackedAgent && agent.id === trackedAgent.id) {
-        const stableYaw = Number.isFinite(yaw) ? yaw : lastTrackedYaw;
-        lastTrackedYaw = stableYaw ?? 0;
-        trackedPose = {
-          x,
-          z,
-          yaw: stableYaw,
-        };
-      }
-    }
-
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.instanceColor.needsUpdate = true;
+  if (!instancingReady || !instancedBody || !instancedFace) {
+    renderer.render(scene, camera);
+    return;
   }
 
-  updateTrackedUi(trackedAgent);
-  renderViews(trackedPose);
+  const visibleCount = Math.min(nextSnapshot.agents.length, maxInstances);
+  instancedBody.count = visibleCount;
+  instancedFace.count = visibleCount;
+
+  const colorAttr = instancedBody.instanceColor;
+  const colors = colorAttr.array;
+
+  for (let i = 0; i < visibleCount; i += 1) {
+    const agent = nextSnapshot.agents[i];
+    const prevAgent = prevAgentsById?.get(agent.id) ?? agent;
+    const x = THREE.MathUtils.lerp(prevAgent.x, agent.x, alpha) - halfWorld;
+    const z = THREE.MathUtils.lerp(prevAgent.y, agent.y, alpha) - halfWorld;
+    const prevHeading = prevAgent.heading ?? Math.atan2(prevAgent.vx ?? 0, prevAgent.vy ?? 0);
+    const nextHeading = agent.heading ?? Math.atan2(agent.vx ?? 0, agent.vy ?? 0);
+    const yaw = lerpHeading(prevHeading, nextHeading, alpha) + modelYawOffset;
+    const desire = reproductionDesire(agent.energy, agent.age, agent.behavior_state, {
+      reproductionThreshold: reproductionVisual.threshold,
+      energySoftCap: reproductionVisual.softCap,
+      adultAge: reproductionVisual.adultAge,
+    });
+    const prevSize = Number.isFinite(prevAgent.size) ? prevAgent.size : agent.size ?? 0.8;
+    const nextSize = Number.isFinite(agent.size) ? agent.size : prevSize;
+    const blendedSize = THREE.MathUtils.lerp(prevSize, nextSize, alpha);
+    const scale = computeScale(agent, now, blendedSize, desire) * modelBaseScale;
+
+    dummy.position.set(x, 0, z);
+    dummy.scale.set(scale, scale, scale);
+    dummy.rotation.set(0, yaw, 0);
+    dummy.updateMatrix();
+    instancedBody.setMatrixAt(i, dummy.matrix);
+    instancedFace.setMatrixAt(i, dummy.matrix);
+
+    const color = computeColor(agent, now, desire);
+    const base = i * 3;
+    colors[base] = color.r;
+    colors[base + 1] = color.g;
+    colors[base + 2] = color.b;
+  }
+
+  instancedBody.instanceMatrix.needsUpdate = true;
+  instancedFace.instanceMatrix.needsUpdate = true;
+  instancedBody.instanceColor.needsUpdate = true;
+
+  renderer.render(scene, camera);
 }
 
 function requestPixelRatio(next) {
@@ -558,16 +531,15 @@ function requestPixelRatio(next) {
 function applyPendingPixelRatio() {
   if (pendingPixelRatio === null || !renderer) return false;
   ensureLayout();
-  if (viewports) {
-    renderer.setPixelRatio(pendingPixelRatio);
-    renderer.setSize(viewports.full.width, viewports.full.height, false);
-  }
+  const { width, height } = measureContainer();
+  renderer.setPixelRatio(pendingPixelRatio);
+  renderer.setSize(width, height, false);
   pendingPixelRatio = null;
   return true;
 }
 
 function adjustPixelRatioIfNeeded() {
-  if (!renderer || !viewports) return;
+  if (!renderer) return;
   const current = renderer.getPixelRatio();
   const tooSlow = lastRenderMs > 24 && current > 1.0;
   const plentyFast = lastRenderMs < 12 && current < 1.25;
@@ -578,70 +550,6 @@ function adjustPixelRatioIfNeeded() {
     const next = Math.min(1.3, current + 0.05);
     requestPixelRatio(next);
   }
-}
-
-function renderViews(trackedPose) {
-  if (!renderer || !scene || !viewports) return;
-
-  const fullViewport = viewports.full;
-  const fullHeight = fullViewport.height;
-  const toGlCoords = (vp) => {
-    // three.js viewports/scissors use bottom-left origin; convert from top-left.
-    const glY = Math.max(fullHeight - (vp.y + vp.height), 0);
-    return { x: vp.x, y: glY, width: vp.width, height: vp.height };
-  };
-
-  renderer.setScissorTest(true);
-  renderer.autoClear = false;
-  renderer.setViewport(fullViewport.x, fullViewport.y, fullViewport.width, fullViewport.height);
-  renderer.setScissor(fullViewport.x, fullViewport.y, fullViewport.width, fullViewport.height);
-  renderer.clear();
-
-  const views = [
-    { camera: cameras.top, viewport: viewports.topDown },
-    { camera: cameras.angle, viewport: viewports.angle },
-  ];
-
-  setAngleCameraProjection(viewports.angle);
-
-  if (trackedPose) {
-    setPovCameraProjection(viewports.pov);
-    updatePovCamera(trackedPose, viewports.pov);
-    views.push({ camera: cameras.pov, viewport: viewports.pov });
-  } else {
-    setPovCameraProjection(viewports.pov);
-    cameras.pov.position.set(0, worldSize * 0.35, worldSize * 0.25);
-    cameras.pov.lookAt(0, 0, 0);
-    views.push({ camera: cameras.pov, viewport: viewports.pov });
-  }
-
-  for (const view of views) {
-    const scaled = toGlCoords(view.viewport);
-    renderer.setViewport(scaled.x, scaled.y, scaled.width, scaled.height);
-    renderer.setScissor(scaled.x, scaled.y, scaled.width, scaled.height);
-    renderer.clearDepth();
-    renderer.render(scene, view.camera);
-  }
-
-  renderer.setScissorTest(false);
-}
-
-function updatePovCamera(pose, viewport) {
-  setPovCameraProjection(viewport);
-  const dir = tmpDir.set(Math.sin(pose.yaw), 0, Math.cos(pose.yaw));
-  const followDistance = 6;
-  const eyeHeight = 1.8;
-  const lookAhead = 3;
-
-  const position = tmpPos.set(pose.x, 0.4, pose.z);
-  position.addScaledVector(dir, -followDistance);
-  position.y += eyeHeight;
-
-  const lookTarget = tmpLook.set(pose.x, 0.6, pose.z).addScaledVector(dir, lookAhead);
-
-  cameras.pov.position.copy(position);
-  cameras.pov.up.set(0, 1, 0);
-  cameras.pov.lookAt(lookTarget);
 }
 
 initThree();
