@@ -80,6 +80,8 @@ def update_group_membership(
     neighbor_offsets: List[Vector2],
     neighbor_dist_sq: List[float],
     can_form_groups: bool,
+    detach_radius_sq: float,
+    close_threshold: int,
     traits: AgentTraits | None = None,
 ) -> int:
     original_group = agent.group_id
@@ -96,9 +98,6 @@ def update_group_membership(
         world._group_lineage_counts.clear()
     same_group_neighbors = 0
     same_group_close_neighbors = 0
-    detach_radius_sq = feedback.group_detach_radius * feedback.group_detach_radius
-    close_threshold = feedback.group_detach_close_neighbor_threshold
-
     for other, offset, dist_sq in zip(neighbors, neighbor_offsets, neighbor_dist_sq):
         if other.group_id == world._UNGROUPED:
             world._ungrouped_neighbors.append(other)

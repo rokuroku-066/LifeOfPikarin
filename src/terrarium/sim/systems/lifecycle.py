@@ -46,13 +46,15 @@ def apply_life_cycle(
     population: int | None = None,
     sim_time: float = 0.0,
     traits: AgentTraits | None = None,
+    base_cell_key: tuple[int, int] | None = None,
 ) -> int:
     dt = world._config.time_step
     births_added = 0
     if population is None:
         population = len(world._agents)
     traits = world._clamp_traits(agent.traits) if traits is None else traits
-    base_cell_key = world._cell_key(agent.position)
+    if base_cell_key is None:
+        base_cell_key = world._cell_key(agent.position)
     pending_food = world._pending_food
     pending_pheromone = world._pending_pheromone
     metabolism_multiplier = world._trait_metabolism_multiplier(traits)

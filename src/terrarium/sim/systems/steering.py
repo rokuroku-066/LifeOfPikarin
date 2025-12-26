@@ -6,7 +6,7 @@ from typing import List, TYPE_CHECKING
 from pygame.math import Vector2
 
 from ..core.agent import Agent, AgentState, AgentTraits
-from ..utils.math2d import ZERO, _clamp_length_xy, _safe_normalize_xy
+from ..utils.math2d import ZERO, _clamp_length_xy, _clamp_length_xy_f, _safe_normalize_xy
 from . import fields
 
 if TYPE_CHECKING:
@@ -304,8 +304,9 @@ def resolve_overlap(
     inv = 1.0 / count
     correction_x *= inv
     correction_y *= inv
-    correction = _clamp_length_xy(correction_x, correction_y, min_sep * 0.5)
-    return position + correction
+    correction_x, correction_y = _clamp_length_xy_f(correction_x, correction_y, min_sep * 0.5)
+    position.update(position.x + correction_x, position.y + correction_y)
+    return position
 
 
 def alignment(world: World, agent: Agent, neighbors: List[Agent]) -> Vector2:
