@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Any, Dict, List, Set
 from time import perf_counter
 
@@ -18,6 +19,39 @@ from ..utils.math2d import _clamp_length_xy_f, _clamp_value, _heading_from_veloc
 _CLIMATE_RNG_SALT = 0xC0A1F00D5EED1234
 _APPEARANCE_RNG_SALT = 0xA51E0EA7E9CA2311
 _TRAIT_RNG_SALT = 0x7BADCA11C0FFEE01
+
+
+@dataclass(slots=True)
+class TickContext:
+    tick: int
+    config: SimulationConfig
+    species: Any
+    feedback: Any
+    dt: float
+    sim_time: float
+    can_form_groups: bool
+    current_population: int
+    group_update_stride: int
+    use_group_stride: bool
+    steering_stride: int
+    use_steering_stride: bool
+    detach_radius_sq: float
+    close_threshold: int
+    vision_cell_offsets: List[Vector2]
+    vision_radius_sq: float
+    danger_present: bool
+
+
+@dataclass(slots=True)
+class TickAggregates:
+    neighbor_checks: int
+    births: int
+    deaths: int
+    population: int
+    energy_sum: float
+    age_sum: float
+    ungrouped: int
+    group_ids: Set[int]
 
 
 def _derive_stream_seed(seed: int, salt: int) -> int:
@@ -110,6 +144,43 @@ class World:
 
     def step(self, tick: int) -> TickMetrics:
         start = perf_counter()
+        ctx = self._begin_tick(tick)
+        self._rebuild_spatial_index(ctx)
+
+        aggregates = self._init_tick_aggregates()
+        paired_ids = self._paired_ids_scratch
+        paired_ids.clear()
+
+        for agent in self._agents:
+            if not agent.alive:
+                continue
+
+            traits, speed_limit = self._prepare_agent(agent)
+            neighbor_count = self._collect_neighbors(agent, ctx)
+            aggregates.neighbor_checks += neighbor_count
+            same_group_neighbors = self._update_group_membership(agent, ctx, traits)
+            desired, sensed_danger = self._compute_steering(agent, ctx, speed_limit, traits)
+            base_cell_key = self._integrate_motion(agent, desired, speed_limit, ctx.dt)
+            births_added = self._apply_lifecycle(
+                agent,
+                ctx,
+                same_group_neighbors,
+                neighbor_count,
+                base_cell_key,
+                paired_ids,
+                traits,
+            )
+            aggregates.births += births_added
+            self._apply_danger_pulse_if_needed(agent, base_cell_key, sensed_danger)
+            if agent.alive:
+                self._accumulate_agent_stats(aggregates, agent)
+
+        self._accumulate_birth_queue(aggregates)
+        elapsed_ms = (perf_counter() - start) * 1000.0
+        self._metrics = self._finalize_tick(ctx, aggregates, elapsed_ms)
+        return self._metrics
+
+    def _begin_tick(self, tick: int) -> TickContext:
         config = self._config
         species = config.species
         feedback = config.feedback
@@ -118,8 +189,8 @@ class World:
         self._pending_danger.clear()
         self._pending_pheromone.clear()
 
-        sim_time = tick * self._config.time_step
-        can_form_groups = sim_time >= self._config.feedback.group_formation_warmup_seconds
+        sim_time = tick * config.time_step
+        can_form_groups = sim_time >= feedback.group_formation_warmup_seconds
 
         self._group_sizes.clear()
         current_population = len(self._agents)
@@ -135,171 +206,228 @@ class World:
         detach_radius_sq = feedback.group_detach_radius * feedback.group_detach_radius
         close_threshold = feedback.group_detach_close_neighbor_threshold
 
+        return TickContext(
+            tick=tick,
+            config=config,
+            species=species,
+            feedback=feedback,
+            dt=dt,
+            sim_time=sim_time,
+            can_form_groups=can_form_groups,
+            current_population=current_population,
+            group_update_stride=group_update_stride,
+            use_group_stride=use_group_stride,
+            steering_stride=steering_stride,
+            use_steering_stride=use_steering_stride,
+            detach_radius_sq=detach_radius_sq,
+            close_threshold=close_threshold,
+            vision_cell_offsets=self._vision_cell_offsets,
+            vision_radius_sq=self._vision_radius_sq,
+            danger_present=self._environment.has_danger(),
+        )
+
+    def _rebuild_spatial_index(self, ctx: TickContext) -> None:
         self._grid.clear()
         for agent in self._agents:
             if agent.group_id >= 0:
                 self._group_sizes[agent.group_id] = self._group_sizes.get(agent.group_id, 0) + 1
             self._grid.insert(agent)
 
-        neighbor_checks = 0
-        births = 0
-        deaths = 0
-        paired_ids = self._paired_ids_scratch
-        paired_ids.clear()
-
-        vision_cell_offsets = self._vision_cell_offsets
-        vision_radius_sq = self._vision_radius_sq
-        population = 0
-        energy_sum = 0.0
-        age_sum = 0.0
-        ungrouped = 0
+    def _init_tick_aggregates(self) -> TickAggregates:
         group_ids = self._group_scratch
         group_ids.clear()
-        danger_present = self._environment.has_danger()
+        return TickAggregates(
+            neighbor_checks=0,
+            births=0,
+            deaths=0,
+            population=0,
+            energy_sum=0.0,
+            age_sum=0.0,
+            ungrouped=0,
+            group_ids=group_ids,
+        )
 
-        for agent in self._agents:
-            if not agent.alive:
-                continue
+    def _prepare_agent(self, agent: Agent) -> tuple[AgentTraits, float]:
+        if agent.traits_dirty:
+            traits = self._clamp_traits(agent.traits)
+            agent.traits_dirty = False
+        else:
+            traits = agent.traits
+        speed_limit = self._trait_speed_limit(traits)
+        return traits, speed_limit
 
-            if agent.traits_dirty:
-                traits = self._clamp_traits(agent.traits)
-                agent.traits_dirty = False
-            else:
-                traits = agent.traits
-            speed_limit = self._trait_speed_limit(traits)
+    def _collect_neighbors(self, agent: Agent, ctx: TickContext) -> int:
+        self._grid.collect_neighbors_precomputed(
+            agent.position,
+            ctx.vision_cell_offsets,
+            ctx.vision_radius_sq,
+            self._neighbor_agents,
+            self._neighbor_offsets,
+            exclude_id=agent.id,
+            out_dist_sq=self._neighbor_dist_sq,
+        )
+        return len(self._neighbor_agents)
 
-            self._grid.collect_neighbors_precomputed(
-                agent.position,
-                vision_cell_offsets,
-                vision_radius_sq,
-                self._neighbor_agents,
-                self._neighbor_offsets,
-                exclude_id=agent.id,
-                out_dist_sq=self._neighbor_dist_sq,
-            )
-            neighbor_count = len(self._neighbor_agents)
-            neighbor_checks += neighbor_count
-            neighbor_dist_sq = self._neighbor_dist_sq
-            if use_group_stride and (tick + agent.id) % group_update_stride != 0:
-                same_group_neighbors = 0
-                same_group_close_neighbors = 0
-                if agent.group_id != self._UNGROUPED:
-                    for other, dist_sq in zip(self._neighbor_agents, neighbor_dist_sq):
-                        if other.group_id != agent.group_id:
-                            continue
-                        same_group_neighbors += 1
-                        if dist_sq <= detach_radius_sq:
-                            same_group_close_neighbors += 1
-                    if same_group_close_neighbors >= close_threshold:
-                        agent.group_lonely_seconds = 0.0
-                    else:
-                        agent.group_lonely_seconds += dt
-                else:
+    def _update_group_membership(self, agent: Agent, ctx: TickContext, traits: AgentTraits) -> int:
+        neighbor_dist_sq = self._neighbor_dist_sq
+        if ctx.use_group_stride and (ctx.tick + agent.id) % ctx.group_update_stride != 0:
+            same_group_neighbors = 0
+            same_group_close_neighbors = 0
+            if agent.group_id != self._UNGROUPED:
+                for other, dist_sq in zip(self._neighbor_agents, neighbor_dist_sq):
+                    if other.group_id != agent.group_id:
+                        continue
+                    same_group_neighbors += 1
+                    if dist_sq <= ctx.detach_radius_sq:
+                        same_group_close_neighbors += 1
+                if same_group_close_neighbors >= ctx.close_threshold:
                     agent.group_lonely_seconds = 0.0
-                groups.decay_group_cooldown(self, agent)
+                else:
+                    agent.group_lonely_seconds += ctx.dt
             else:
-                same_group_neighbors = groups.update_group_membership(
-                    self,
-                    agent,
-                    self._neighbor_agents,
-                    self._neighbor_offsets,
-                    neighbor_dist_sq,
-                    can_form_groups,
-                    detach_radius_sq,
-                    close_threshold,
-                    traits=traits,
-                )
+                agent.group_lonely_seconds = 0.0
+            groups.decay_group_cooldown(self, agent)
+            return same_group_neighbors
 
-            steering_update = not use_steering_stride or (tick + agent.id) % steering_stride == 0
-            if steering_update:
-                desired, sensed_danger = steering.compute_desired_velocity(
-                    self,
-                    agent,
-                    self._neighbor_agents,
-                    self._neighbor_offsets,
-                    speed_limit,
-                    return_sensed=True,
-                    neighbor_dist_sq=neighbor_dist_sq,
-                    traits=traits,
-                    danger_present=danger_present,
-                    base_cell_key=self._cell_key(agent.position),
-                )
-                agent.last_desired = desired
-                agent.last_sensed_danger = sensed_danger
-            else:
-                desired = agent.last_desired
-                sensed_danger = agent.last_sensed_danger
-            accel_x = desired.x - agent.velocity.x
-            accel_y = desired.y - agent.velocity.y
-            accel_x, accel_y = _clamp_length_xy_f(accel_x, accel_y, species.max_acceleration)
-            vel_x = agent.velocity.x + accel_x * dt
-            vel_y = agent.velocity.y + accel_y * dt
-            vel_x, vel_y = _clamp_length_xy_f(vel_x, vel_y, speed_limit)
-            agent.position.update(
-                agent.position.x + vel_x * dt,
-                agent.position.y + vel_y * dt,
-            )
-            steering.resolve_overlap(self, agent.position, self._neighbor_offsets, neighbor_dist_sq)
-            pos_x, pos_y, vel_x, vel_y = self._reflect(
-                agent.position.x, agent.position.y, vel_x, vel_y, config.world_size
-            )
-            agent.position.update(pos_x, pos_y)
-            agent.velocity.update(vel_x, vel_y)
-            self._update_heading(agent)
-            agent.age += dt
+        return groups.update_group_membership(
+            self,
+            agent,
+            self._neighbor_agents,
+            self._neighbor_offsets,
+            neighbor_dist_sq,
+            ctx.can_form_groups,
+            ctx.detach_radius_sq,
+            ctx.close_threshold,
+            traits=traits,
+        )
 
-            base_cell_key = self._cell_key(agent.position)
-            births += lifecycle.apply_life_cycle(
+    def _compute_steering(
+        self, agent: Agent, ctx: TickContext, speed_limit: float, traits: AgentTraits
+    ) -> tuple[Vector2, bool]:
+        steering_update = not ctx.use_steering_stride or (ctx.tick + agent.id) % ctx.steering_stride == 0
+        if steering_update:
+            desired, sensed_danger = steering.compute_desired_velocity(
                 self,
                 agent,
-                neighbor_count,
-                same_group_neighbors,
-                can_form_groups,
-                neighbors=self._neighbor_agents,
-                neighbor_dist_sq=neighbor_dist_sq,
-                paired_ids=paired_ids,
-                population=current_population,
-                sim_time=sim_time,
+                self._neighbor_agents,
+                self._neighbor_offsets,
+                speed_limit,
+                return_sensed=True,
+                neighbor_dist_sq=self._neighbor_dist_sq,
                 traits=traits,
-                base_cell_key=base_cell_key,
+                danger_present=ctx.danger_present,
+                base_cell_key=self._cell_key(agent.position),
             )
-            if agent.state == AgentState.FLEE or sensed_danger:
-                pending_danger = self._pending_danger
-                pending_danger[base_cell_key] = (
-                    pending_danger.get(base_cell_key, 0.0)
-                    + self._config.environment.danger_pulse_on_flee
-                )
-            if agent.alive:
-                population += 1
-                energy_sum += agent.energy
-                age_sum += agent.age
-                if agent.group_id == self._UNGROUPED:
-                    ungrouped += 1
-                else:
-                    group_ids.add(agent.group_id)
+            agent.last_desired = desired
+            agent.last_sensed_danger = sensed_danger
+            return desired, sensed_danger
 
-        if self._birth_queue:
-            for born in self._birth_queue:
-                population += 1
-                energy_sum += born.energy
-                age_sum += born.age
-                if born.group_id == self._UNGROUPED:
-                    ungrouped += 1
-                else:
-                    group_ids.add(born.group_id)
+        return agent.last_desired, agent.last_sensed_danger
+
+    def _integrate_motion(
+        self, agent: Agent, desired: Vector2, speed_limit: float, dt: float
+    ) -> tuple[int, int]:
+        accel_x = desired.x - agent.velocity.x
+        accel_y = desired.y - agent.velocity.y
+        accel_x, accel_y = _clamp_length_xy_f(accel_x, accel_y, self._config.species.max_acceleration)
+        vel_x = agent.velocity.x + accel_x * dt
+        vel_y = agent.velocity.y + accel_y * dt
+        vel_x, vel_y = _clamp_length_xy_f(vel_x, vel_y, speed_limit)
+        agent.position.update(
+            agent.position.x + vel_x * dt,
+            agent.position.y + vel_y * dt,
+        )
+        steering.resolve_overlap(self, agent.position, self._neighbor_offsets, self._neighbor_dist_sq)
+        pos_x, pos_y, vel_x, vel_y = self._reflect(
+            agent.position.x, agent.position.y, vel_x, vel_y, self._config.world_size
+        )
+        agent.position.update(pos_x, pos_y)
+        agent.velocity.update(vel_x, vel_y)
+        self._update_heading(agent)
+        agent.age += dt
+        return self._cell_key(agent.position)
+
+    def _apply_lifecycle(
+        self,
+        agent: Agent,
+        ctx: TickContext,
+        same_group_neighbors: int,
+        neighbor_count: int,
+        base_cell_key: tuple[int, int],
+        paired_ids: Set[int],
+        traits: AgentTraits,
+    ) -> int:
+        return lifecycle.apply_life_cycle(
+            self,
+            agent,
+            neighbor_count,
+            same_group_neighbors,
+            ctx.can_form_groups,
+            neighbors=self._neighbor_agents,
+            neighbor_dist_sq=self._neighbor_dist_sq,
+            paired_ids=paired_ids,
+            population=ctx.current_population,
+            sim_time=ctx.sim_time,
+            traits=traits,
+            base_cell_key=base_cell_key,
+        )
+
+    def _apply_danger_pulse_if_needed(
+        self, agent: Agent, base_cell_key: tuple[int, int], sensed_danger: bool
+    ) -> None:
+        if agent.state == AgentState.FLEE or sensed_danger:
+            pending_danger = self._pending_danger
+            pending_danger[base_cell_key] = (
+                pending_danger.get(base_cell_key, 0.0)
+                + self._config.environment.danger_pulse_on_flee
+            )
+
+    def _accumulate_agent_stats(self, aggregates: TickAggregates, agent: Agent) -> None:
+        aggregates.population += 1
+        aggregates.energy_sum += agent.energy
+        aggregates.age_sum += agent.age
+        if agent.group_id == self._UNGROUPED:
+            aggregates.ungrouped += 1
+        else:
+            aggregates.group_ids.add(agent.group_id)
+
+    def _accumulate_birth_queue(self, aggregates: TickAggregates) -> None:
+        if not self._birth_queue:
+            return
+        for born in self._birth_queue:
+            aggregates.population += 1
+            aggregates.energy_sum += born.energy
+            aggregates.age_sum += born.age
+            if born.group_id == self._UNGROUPED:
+                aggregates.ungrouped += 1
+            else:
+                aggregates.group_ids.add(born.group_id)
+
+    def _finalize_tick(
+        self, ctx: TickContext, aggregates: TickAggregates, elapsed_ms: float
+    ) -> TickMetrics:
         self._apply_births()
-        deaths += self._remove_dead()
-        active_groups = group_ids
+        aggregates.deaths += self._remove_dead()
+        active_groups = aggregates.group_ids
         groups.prune_group_bases(self, active_groups)
         fields.apply_field_events(self)
         fields.tick_environment(self, active_groups)
 
-        elapsed_ms = (perf_counter() - start) * 1000.0
-        stats = self._update_cached_population_stats(population, energy_sum, age_sum, group_ids, ungrouped)
-        metrics = metrics_system.create_metrics(
-            tick, births, deaths, neighbor_checks, elapsed_ms, stats
+        stats = self._update_cached_population_stats(
+            aggregates.population,
+            aggregates.energy_sum,
+            aggregates.age_sum,
+            aggregates.group_ids,
+            aggregates.ungrouped,
         )
-        self._metrics = metrics
+        metrics = metrics_system.create_metrics(
+            ctx.tick,
+            aggregates.births,
+            aggregates.deaths,
+            aggregates.neighbor_checks,
+            elapsed_ms,
+            stats,
+        )
         return metrics
 
     def snapshot(self, tick: int) -> Snapshot:
