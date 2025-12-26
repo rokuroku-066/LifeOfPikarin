@@ -150,9 +150,9 @@ class AppearanceConfig:
     base_h: float = 50.0
     base_s: float = 1.0
     base_l: float = 0.83
-    mutation_chance: float = 0.03
-    mutation_delta_h: float = 6.0
-    bias_h_group_deg: float = 0.2
+    mutation_chance: float = 1.0
+    mutation_delta_h: float = 10.0
+    bias_h_group_deg: float = 1.0
     mutation_delta_s: float = 0.08
     mutation_delta_l: float = 0.08
 
