@@ -176,8 +176,8 @@ def apply_life_cycle(
                     )
                     spawn_distance = max(0.5, float(world._config.feedback.min_separation_distance))
                     child_lineage = world._inherit_lineage_pair(agent, mate)
-                    child_appearance_h, child_appearance_s, child_appearance_l = world._inherit_appearance_pair(
-                        agent, mate
+                    child_appearance_h, child_appearance_s, child_appearance_l = (
+                        world._inherit_appearance_pair_with_group(agent, mate, child_group)
                     )
                     child_velocity = _clamp_length(
                         (agent.velocity + mate.velocity) * 0.5,

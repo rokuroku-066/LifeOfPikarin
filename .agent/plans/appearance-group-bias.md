@@ -15,6 +15,7 @@ The goal is to introduce an optional group-derived bias to appearance hue mutati
 - [x] (2025-12-26 06:39Z) Update tests and documentation to reflect new config option.
 - [x] (2025-12-26 06:39Z) Run required Python environment checks and unit tests.
 - [x] (2025-12-26 06:42Z) Update default group hue bias to 0.2 and revalidate tests.
+- [x] (2025-12-26 06:45Z) Align pair hue bias with child group choice and add coverage.
 
 ## Surprises & Discoveries
 
@@ -28,10 +29,13 @@ None yet.
 - Decision: Set `appearance.bias_h_group_deg` default to 0.2.
   Rationale: Aligns with follow-up requirement to enable a small default bias while keeping zero available for opt-out.
   Date/Author: 2025-12-26 / Codex
+- Decision: Use the final child group id when biasing pair appearance mutations.
+  Rationale: Ensures hue drift aligns with the child’s actual group membership in cross-group mating.
+  Date/Author: 2025-12-26 / Codex
 
 ## Outcomes & Retrospective
 
-Implemented group-biased hue mutation with deterministic sign hashing, added coverage for clamped bias behavior, and documented the new configuration option. All required Python tests passed. Updated the default group bias to 0.2 per follow-up and revalidated tests.
+Implemented group-biased hue mutation with deterministic sign hashing, added coverage for clamped bias behavior, and documented the new configuration option. All required Python tests passed. Updated the default group bias to 0.2 per follow-up and revalidated tests. Pair appearance bias now uses the final child group id with added coverage.
 
 ## Context and Orientation
 

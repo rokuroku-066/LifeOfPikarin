@@ -655,15 +655,24 @@ class World:
         return self._clamp_traits(averaged)
 
     def _inherit_appearance_pair(self, first: Agent, second: Agent) -> tuple[float, float, float]:
+        return self._inherit_appearance_pair_with_group(first, second, bias_group_id=None)
+
+    def _inherit_appearance_pair_with_group(
+        self,
+        first: Agent,
+        second: Agent,
+        bias_group_id: int | None,
+    ) -> tuple[float, float, float]:
         appearance = self._config.appearance
         hue = self._circular_mean_deg(first.appearance_h, second.appearance_h)
         saturation = (first.appearance_s + second.appearance_s) * 0.5
         lightness = (first.appearance_l + second.appearance_l) * 0.5
         if appearance.mutation_chance > 0.0 and self._appearance_rng.next_float() < appearance.mutation_chance:
-            if first.group_id == second.group_id:
-                bias_group_id = first.group_id
-            else:
-                bias_group_id = first.group_id if self._appearance_rng.next_float() < 0.5 else second.group_id
+            if bias_group_id is None:
+                if first.group_id == second.group_id:
+                    bias_group_id = first.group_id
+                else:
+                    bias_group_id = first.group_id if self._appearance_rng.next_float() < 0.5 else second.group_id
             hue_delta = self._appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h)
             bias = appearance.bias_h_group_deg * self._group_wind_sign(bias_group_id)
             hue_delta = _clamp_value(
