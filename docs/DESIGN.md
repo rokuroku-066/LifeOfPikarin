@@ -26,7 +26,7 @@
 - **グリッド**: `cell_size=5.5` の SpatialGrid を共有（環境も同セル幅）。
 - **初期個体**: `initial_population=200` をランダム配置・速度でブートストラップ。`max_population=700` を超えてスポーンしない。
 - **エージェント状態**: 位置/速度/heading、エネルギー、年齢、ストレス、グループ ID（未所属は -1）、ワンダー方向と残時間、孤立秒数、グループクールダウン。
-- **形質（`AgentTraits`）**: `speed` / `metabolism` / `disease_resistance` / `fertility` に加え `sociality` / `territoriality` / `loyalty` / `founder` / `kin_bias`。`EvolutionConfig` に従い変異・クランプし、`trait_mutation_chance` と `mutation_strength`、各ウェイトで揺らぐ。系譜は `lineage_id` を持ち、必要に応じて新規割り当て。
+- **形質（`AgentTraits`）**: `speed` / `metabolism` / `disease_resistance` / `fertility` に加え `sociality` / `territoriality` / `loyalty` / `founder` / `kin_bias`。初期個体は clamp 範囲から決定論的に乱数サンプリングされる（メイン RNG とは独立の trait ストリーム）。`EvolutionConfig` に従い変異・クランプし、`trait_mutation_chance` と `mutation_strength`、各ウェイトで揺らぐ。系譜は `lineage_id` を持ち、必要に応じて新規割り当て。
 - **サイズ算出**: 成熟度（`adult_age`）とエネルギーを 0.4〜1.0 のスケールにマップし、スナップショットへ出力。
 
 ## 3. 1 tick の処理フロー (`World.step`)

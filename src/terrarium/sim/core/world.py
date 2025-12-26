@@ -17,6 +17,7 @@ from ..types.snapshot import Snapshot, SnapshotFields, SnapshotMetadata, Snapsho
 from ..utils.math2d import _clamp_length_xy_f, _clamp_value, _heading_from_velocity
 _CLIMATE_RNG_SALT = 0xC0A1F00D5EED1234
 _APPEARANCE_RNG_SALT = 0xA51E0EA7E9CA2311
+_TRAIT_RNG_SALT = 0x7BADCA11C0FFEE01
 
 
 def _derive_stream_seed(seed: int, salt: int) -> int:
@@ -31,6 +32,7 @@ class World:
         self._rng = DeterministicRng(config.seed)
         self._climate_rng = DeterministicRng(_derive_stream_seed(config.seed, _CLIMATE_RNG_SALT))
         self._appearance_rng = DeterministicRng(_derive_stream_seed(config.seed, _APPEARANCE_RNG_SALT))
+        self._trait_rng = DeterministicRng(_derive_stream_seed(config.seed, _TRAIT_RNG_SALT))
         self._grid = SpatialGrid(config.cell_size)
         self._environment = EnvironmentGrid(config.cell_size, config.environment, config.world_size)
         self._agents: List[Agent] = []
@@ -90,6 +92,7 @@ class World:
         self._rng.reset()
         self._climate_rng.reset()
         self._appearance_rng.reset()
+        self._trait_rng.reset()
         self._next_lineage_id = 0
         self._id_to_index.clear()
         self._metrics = None
@@ -324,7 +327,7 @@ class World:
 
     def _bootstrap_population(self) -> None:
         for _ in range(self._config.initial_population):
-            traits = self._clamp_traits(AgentTraits())
+            traits = self._sample_initial_traits()
             lineage = self._allocate_lineage_id()
             speed_limit = self._trait_speed_limit(traits)
             appearance = self._config.appearance
@@ -369,6 +372,26 @@ class World:
         if max_age < min_age:
             min_age, max_age = max_age, min_age
         return self._rng.next_range(min_age, max_age)
+
+    def _sample_initial_traits(self) -> AgentTraits:
+        clamp = self._config.evolution.clamp
+        return AgentTraits(
+            speed=self._sample_trait_range(clamp.speed),
+            metabolism=self._sample_trait_range(clamp.metabolism),
+            disease_resistance=self._sample_trait_range(clamp.disease_resistance),
+            fertility=self._sample_trait_range(clamp.fertility),
+            sociality=self._sample_trait_range(clamp.sociality),
+            territoriality=self._sample_trait_range(clamp.territoriality),
+            loyalty=self._sample_trait_range(clamp.loyalty),
+            founder=self._sample_trait_range(clamp.founder),
+            kin_bias=self._sample_trait_range(clamp.kin_bias),
+        )
+
+    def _sample_trait_range(self, bounds: tuple[float, float]) -> float:
+        low, high = bounds
+        if high < low:
+            low, high = high, low
+        return self._trait_rng.next_range(low, high)
 
     def _allocate_lineage_id(self) -> int:
         lineage = self._next_lineage_id
