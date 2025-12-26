@@ -14,6 +14,7 @@ This change makes the simulation tick flow in `World.step` easier to read and ma
 - [x] (2025-12-26 04:28Z) Refactor `src/terrarium/sim/core/world.py` using in-file helper methods and a tick context container, keeping RNG and neighbor buffer behavior unchanged.
 - [x] (2025-12-26 04:28Z) Run required Python checks (`python --version`, `pip install -r requirements.txt`, `pytest tests/python`).
 - [x] (2025-12-26 04:28Z) Update plan with outcomes, decisions, and validation notes.
+- [x] (2025-12-26 04:39Z) Adjust tick timing so metrics include finalize work and re-run required tests.
 
 ## Surprises & Discoveries
 
@@ -27,7 +28,7 @@ None yet.
 
 ## Outcomes & Retrospective
 
-`World.step` has been reorganized into helper methods with a tick context and aggregate container while keeping the existing order of operations, neighbor buffer reuse, and RNG call patterns. The required Python test suite passed after the refactor.
+`World.step` has been reorganized into helper methods with a tick context and aggregate container while keeping the existing order of operations, neighbor buffer reuse, and RNG call patterns. Tick duration accounting now includes finalize work by measuring after `_finalize_tick` again. The Python test suite completed successfully after the timing fix.
 
 ## Context and Orientation
 

@@ -176,8 +176,17 @@ class World:
                 self._accumulate_agent_stats(aggregates, agent)
 
         self._accumulate_birth_queue(aggregates)
+        stats = self._finalize_tick(ctx, aggregates)
         elapsed_ms = (perf_counter() - start) * 1000.0
-        self._metrics = self._finalize_tick(ctx, aggregates, elapsed_ms)
+        metrics = metrics_system.create_metrics(
+            ctx.tick,
+            aggregates.births,
+            aggregates.deaths,
+            aggregates.neighbor_checks,
+            elapsed_ms,
+            stats,
+        )
+        self._metrics = metrics
         return self._metrics
 
     def _begin_tick(self, tick: int) -> TickContext:
@@ -404,8 +413,8 @@ class World:
                 aggregates.group_ids.add(born.group_id)
 
     def _finalize_tick(
-        self, ctx: TickContext, aggregates: TickAggregates, elapsed_ms: float
-    ) -> TickMetrics:
+        self, ctx: TickContext, aggregates: TickAggregates
+    ) -> tuple[int, float, float, int, int]:
         self._apply_births()
         aggregates.deaths += self._remove_dead()
         active_groups = aggregates.group_ids
@@ -413,22 +422,13 @@ class World:
         fields.apply_field_events(self)
         fields.tick_environment(self, active_groups)
 
-        stats = self._update_cached_population_stats(
+        return self._update_cached_population_stats(
             aggregates.population,
             aggregates.energy_sum,
             aggregates.age_sum,
             aggregates.group_ids,
             aggregates.ungrouped,
         )
-        metrics = metrics_system.create_metrics(
-            ctx.tick,
-            aggregates.births,
-            aggregates.deaths,
-            aggregates.neighbor_checks,
-            elapsed_ms,
-            stats,
-        )
-        return metrics
 
     def snapshot(self, tick: int) -> Snapshot:
         metrics = self._metrics if self._metrics is not None else self._snapshot_metrics_from_state(tick)
