@@ -655,14 +655,32 @@ class World:
         return self._clamp_traits(averaged)
 
     def _inherit_appearance_pair(self, first: Agent, second: Agent) -> tuple[float, float, float]:
+        return self._inherit_appearance_pair_with_group(first, second, bias_group_id=None)
+
+    def _inherit_appearance_pair_with_group(
+        self,
+        first: Agent,
+        second: Agent,
+        bias_group_id: int | None,
+    ) -> tuple[float, float, float]:
         appearance = self._config.appearance
         hue = self._circular_mean_deg(first.appearance_h, second.appearance_h)
         saturation = (first.appearance_s + second.appearance_s) * 0.5
         lightness = (first.appearance_l + second.appearance_l) * 0.5
         if appearance.mutation_chance > 0.0 and self._appearance_rng.next_float() < appearance.mutation_chance:
-            hue = self._wrap_hue(
-                hue + self._appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h)
+            if bias_group_id is None:
+                if first.group_id == second.group_id:
+                    bias_group_id = first.group_id
+                else:
+                    bias_group_id = first.group_id if self._appearance_rng.next_float() < 0.5 else second.group_id
+            hue_delta = self._appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h)
+            bias = appearance.bias_h_group_deg * self._group_wind_sign(bias_group_id)
+            hue_delta = _clamp_value(
+                hue_delta + bias,
+                -appearance.mutation_delta_h,
+                appearance.mutation_delta_h,
             )
+            hue = self._wrap_hue(hue + hue_delta)
             saturation = _clamp_value(
                 saturation
                 + self._appearance_rng.next_range(-appearance.mutation_delta_s, appearance.mutation_delta_s),
@@ -691,13 +709,26 @@ class World:
             return first.group_id
         return first.group_id if self._rng.next_float() < 0.5 else second.group_id
 
+    def _group_wind_sign(self, group_id: int) -> float:
+        if group_id < 0:
+            return 0.0
+        hashed = (int(group_id) * 0x9E3779B1) & 0xFFFFFFFF
+        return 1.0 if (hashed & 1) == 0 else -1.0
+
     def _inherit_appearance(self, parent: Agent) -> tuple[float, float, float]:
         appearance = self._config.appearance
         hue = parent.appearance_h
         saturation = parent.appearance_s
         lightness = parent.appearance_l
         if appearance.mutation_chance > 0.0 and self._appearance_rng.next_float() < appearance.mutation_chance:
-            hue = self._wrap_hue(hue + self._appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h))
+            hue_delta = self._appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h)
+            bias = appearance.bias_h_group_deg * self._group_wind_sign(parent.group_id)
+            hue_delta = _clamp_value(
+                hue_delta + bias,
+                -appearance.mutation_delta_h,
+                appearance.mutation_delta_h,
+            )
+            hue = self._wrap_hue(hue + hue_delta)
             saturation = _clamp_value(
                 saturation + self._appearance_rng.next_range(-appearance.mutation_delta_s, appearance.mutation_delta_s),
                 0.0,
