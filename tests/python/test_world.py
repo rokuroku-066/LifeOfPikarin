@@ -18,7 +18,7 @@ from terrarium.sim.core.config import (
 )
 from terrarium.sim.core.environment import FoodCell
 from terrarium.sim.core.rng import DeterministicRng
-from terrarium.sim.core.world import World, _APPEARANCE_RNG_SALT, _derive_stream_seed
+from terrarium.sim.core.world import World, _APPEARANCE_RNG_SALT, _TRAIT_RNG_SALT, _derive_stream_seed
 from terrarium.sim.systems import fields as fields_system, lifecycle, steering
 from terrarium.sim.utils.math2d import _clamp_value
 
@@ -160,6 +160,58 @@ def test_deterministic_steps_with_evolution_enabled():
     )
     result_b = run_steps(config_b, 40)
     assert result_a == result_b
+
+
+def test_bootstrap_traits_use_trait_rng_stream():
+    clamp = EvolutionClampConfig(
+        speed=(0.6, 1.4),
+        metabolism=(0.7, 1.3),
+        disease_resistance=(0.5, 1.5),
+        fertility=(0.8, 1.2),
+        sociality=(0.4, 1.0),
+        territoriality=(0.9, 1.1),
+        loyalty=(0.2, 0.8),
+        founder=(0.3, 1.7),
+        kin_bias=(0.1, 0.9),
+    )
+    config = SimulationConfig(
+        seed=707,
+        initial_population=3,
+        evolution=EvolutionConfig(enabled=False, clamp=clamp),
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+        ),
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+    )
+    world = World(config)
+    trait_rng = DeterministicRng(_derive_stream_seed(config.seed, _TRAIT_RNG_SALT))
+
+    for agent in world.agents:
+        expected = AgentTraits(
+            speed=trait_rng.next_range(*clamp.speed),
+            metabolism=trait_rng.next_range(*clamp.metabolism),
+            disease_resistance=trait_rng.next_range(*clamp.disease_resistance),
+            fertility=trait_rng.next_range(*clamp.fertility),
+            sociality=trait_rng.next_range(*clamp.sociality),
+            territoriality=trait_rng.next_range(*clamp.territoriality),
+            loyalty=trait_rng.next_range(*clamp.loyalty),
+            founder=trait_rng.next_range(*clamp.founder),
+            kin_bias=trait_rng.next_range(*clamp.kin_bias),
+        )
+        traits = agent.traits
+        assert traits.speed == approx(expected.speed)
+        assert traits.metabolism == approx(expected.metabolism)
+        assert traits.disease_resistance == approx(expected.disease_resistance)
+        assert traits.fertility == approx(expected.fertility)
+        assert traits.sociality == approx(expected.sociality)
+        assert traits.territoriality == approx(expected.territoriality)
+        assert traits.loyalty == approx(expected.loyalty)
+        assert traits.founder == approx(expected.founder)
+        assert traits.kin_bias == approx(expected.kin_bias)
 
 
 def test_traits_respect_clamp_after_births():
