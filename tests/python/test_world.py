@@ -535,6 +535,85 @@ def test_appearance_inheritance_is_deterministic_and_mutates():
     assert child.appearance_l == approx(child_b.appearance_l)
 
 
+def test_appearance_group_bias_clamps_hue_delta():
+    appearance = AppearanceConfig(
+        base_h=50.0,
+        base_s=1.0,
+        base_l=0.83,
+        mutation_chance=1.0,
+        mutation_delta_h=3.0,
+        bias_h_group_deg=4.0,
+        mutation_delta_s=0.0,
+        mutation_delta_l=0.0,
+    )
+    feedback = FeedbackConfig(
+        reproduction_base_chance=0.0,
+        base_death_probability_per_second=0.0,
+        age_death_probability_per_second=0.0,
+        density_death_probability_per_neighbor_per_second=0.0,
+        disease_probability_per_neighbor=0.0,
+        stress_drain_per_neighbor=0.0,
+        group_switch_chance=0.0,
+        group_detach_new_group_chance=0.0,
+        group_formation_chance=0.0,
+        group_split_chance=0.0,
+        group_split_new_group_chance=0.0,
+        group_birth_seed_chance=0.0,
+        group_mutation_chance=0.0,
+    )
+    config = SimulationConfig(
+        seed=33,
+        time_step=1.0,
+        initial_population=1,
+        max_population=1,
+        appearance=appearance,
+        species=SpeciesConfig(
+            base_speed=0.0,
+            max_acceleration=0.0,
+            metabolism_per_second=0.0,
+            vision_radius=0.0,
+            wander_jitter=0.0,
+            reproduction_energy_threshold=1.0,
+            adult_age=0.0,
+        ),
+        feedback=feedback,
+        evolution=EvolutionConfig(enabled=False),
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+    )
+    world = World(config)
+    parent = world.agents[0]
+    parent.group_id = 5
+    parent.appearance_h = 10.0
+
+    hue, saturation, lightness = world._inherit_appearance(parent)
+
+    appearance_rng = DeterministicRng(_derive_stream_seed(config.seed, _APPEARANCE_RNG_SALT))
+    appearance_rng.next_float()
+    hue_delta = appearance_rng.next_range(-appearance.mutation_delta_h, appearance.mutation_delta_h)
+    hashed = (int(parent.group_id) * 0x9E3779B1) & 0xFFFFFFFF
+    sign = 1.0 if (hashed & 1) == 0 else -1.0
+    hue_delta = _clamp_value(
+        hue_delta + appearance.bias_h_group_deg * sign,
+        -appearance.mutation_delta_h,
+        appearance.mutation_delta_h,
+    )
+    expected_h = (parent.appearance_h + hue_delta) % 360
+    expected_s = _clamp_value(
+        parent.appearance_s + appearance_rng.next_range(-appearance.mutation_delta_s, appearance.mutation_delta_s),
+        0.0,
+        1.0,
+    )
+    expected_l = _clamp_value(
+        parent.appearance_l + appearance_rng.next_range(-appearance.mutation_delta_l, appearance.mutation_delta_l),
+        0.0,
+        1.0,
+    )
+
+    assert hue == approx(expected_h)
+    assert saturation == approx(expected_s)
+    assert lightness == approx(expected_l)
+
+
 def test_pair_reproduction_requires_mate():
     feedback = FeedbackConfig(
         reproduction_base_chance=1.0,
