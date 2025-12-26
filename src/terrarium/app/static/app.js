@@ -52,6 +52,7 @@ let prevSnapshot = null;
 let nextSnapshot = null;
 let prevSnapshotTime = 0;
 let nextSnapshotTime = 0;
+const renderQueue = [];
 const fallbackSnapshotInterval = 34;
 
 let renderer = null;
@@ -431,15 +432,22 @@ function connect() {
   socket.onopen = () => setConnectionStatus('ok', 'connected');
   socket.onmessage = (event) => {
     const parsed = JSON.parse(event.data);
-    parsed.agentsById = new Map(parsed.agents.map((agent) => [agent.id, agent]));
-    prevSnapshot = nextSnapshot;
-    prevSnapshotTime = nextSnapshotTime;
-    nextSnapshot = parsed;
-    nextSnapshotTime = performance.now();
-    if (!prevSnapshot) {
-      prevSnapshot = nextSnapshot;
-      prevSnapshotTime = nextSnapshotTime;
+    if (parsed.type !== 'snapshot' || !parsed.payload) {
+      return;
     }
+    const snapshot = parsed.payload;
+    if (Number.isFinite(parsed.tick)) {
+      snapshot.tick = parsed.tick;
+    }
+    snapshot.agentsById = new Map(snapshot.agents.map((agent) => [agent.id, agent]));
+    if (prevSnapshot && Number.isFinite(snapshot.tick) && snapshot.tick < prevSnapshot.tick) {
+      renderQueue.length = 0;
+      prevSnapshot = null;
+      nextSnapshot = null;
+      prevSnapshotTime = 0;
+      nextSnapshotTime = 0;
+    }
+    renderQueue.push(snapshot);
   };
   socket.onerror = () => setConnectionStatus('error', 'connection error');
   socket.onclose = () => {
@@ -460,6 +468,12 @@ function sendControl(path, body) {
   });
 }
 
+function sendAck(tick) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  if (!Number.isFinite(tick)) return;
+  socket.send(JSON.stringify({ type: 'ack', tick }));
+}
+
 startBtn.addEventListener('click', () => sendControl('/api/control/start'));
 stopBtn.addEventListener('click', () => sendControl('/api/control/stop'));
 resetBtn.addEventListener('click', () => sendControl('/api/control/reset'));
@@ -471,16 +485,38 @@ function updateView(now) {
   if (!scene || !renderer || !camera) return;
   ensureLayout();
 
+  if (!nextSnapshot && renderQueue.length > 0) {
+    nextSnapshot = renderQueue.shift();
+    nextSnapshotTime = now;
+    if (!prevSnapshot) {
+      prevSnapshot = nextSnapshot;
+      prevSnapshotTime = nextSnapshotTime;
+    }
+  }
+
   if (!nextSnapshot) {
     renderer.render(scene, camera);
     return;
   }
 
-  updateEnergyVisual(nextSnapshot);
-  const prevAgentsById = prevSnapshot?.agentsById ?? null;
-  const intervalMs = nextSnapshotTime > prevSnapshotTime
+  let intervalMs = nextSnapshotTime > prevSnapshotTime
     ? nextSnapshotTime - prevSnapshotTime
     : fallbackSnapshotInterval;
+  if (renderQueue.length > 0 && now - prevSnapshotTime >= intervalMs) {
+    if (prevSnapshot) {
+      sendAck(prevSnapshot.tick);
+    }
+    prevSnapshot = nextSnapshot;
+    prevSnapshotTime = nextSnapshotTime;
+    nextSnapshot = renderQueue.shift();
+    nextSnapshotTime = now;
+    intervalMs = nextSnapshotTime > prevSnapshotTime
+      ? nextSnapshotTime - prevSnapshotTime
+      : fallbackSnapshotInterval;
+  }
+
+  updateEnergyVisual(nextSnapshot);
+  const prevAgentsById = prevSnapshot?.agentsById ?? null;
   const alpha = THREE.MathUtils.clamp((now - prevSnapshotTime) / intervalMs, 0, 1);
   const interpTick = prevSnapshot
     ? THREE.MathUtils.lerp(prevSnapshot.tick, nextSnapshot.tick, alpha)
