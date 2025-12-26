@@ -40,6 +40,7 @@ class World:
         self._neighbor_agents: List[Agent] = []
         self._neighbor_dist_sq: List[float] = []
         self._group_scratch: Set[int] = set()
+        self._paired_ids_scratch: Set[int] = set()
         self._pending_food: Dict[tuple[int, int], float] = {}
         self._pending_danger: Dict[tuple[int, int], float] = {}
         self._pending_pheromone: Dict[tuple[tuple[int, int], int], float] = {}
@@ -79,6 +80,7 @@ class World:
         self._neighbor_agents.clear()
         self._neighbor_dist_sq.clear()
         self._group_scratch.clear()
+        self._paired_ids_scratch.clear()
         self._pending_food.clear()
         self._pending_danger.clear()
         self._pending_pheromone.clear()
@@ -127,10 +129,8 @@ class World:
         steering_stride = max(1, int(feedback.steering_update_stride))
         steering_threshold = max(0, int(feedback.steering_update_population_threshold))
         use_steering_stride = current_population >= steering_threshold and steering_stride > 1
-        detach_radius_sq = (
-            feedback.group_detach_radius * feedback.group_detach_radius if use_group_stride else 0.0
-        )
-        close_threshold = feedback.group_detach_close_neighbor_threshold if use_group_stride else 0
+        detach_radius_sq = feedback.group_detach_radius * feedback.group_detach_radius
+        close_threshold = feedback.group_detach_close_neighbor_threshold
 
         self._grid.clear()
         for agent in self._agents:
@@ -141,7 +141,8 @@ class World:
         neighbor_checks = 0
         births = 0
         deaths = 0
-        paired_ids: Set[int] = set()
+        paired_ids = self._paired_ids_scratch
+        paired_ids.clear()
 
         vision_cell_offsets = self._vision_cell_offsets
         vision_radius_sq = self._vision_radius_sq
@@ -201,12 +202,13 @@ class World:
                     self._neighbor_offsets,
                     neighbor_dist_sq,
                     can_form_groups,
+                    detach_radius_sq,
+                    close_threshold,
                     traits=traits,
                 )
 
             steering_update = not use_steering_stride or (tick + agent.id) % steering_stride == 0
             if steering_update:
-                base_cell_key = self._cell_key(agent.position)
                 desired, sensed_danger = steering.compute_desired_velocity(
                     self,
                     agent,
@@ -217,7 +219,7 @@ class World:
                     neighbor_dist_sq=neighbor_dist_sq,
                     traits=traits,
                     danger_present=danger_present,
-                    base_cell_key=base_cell_key,
+                    base_cell_key=self._cell_key(agent.position),
                 )
                 agent.last_desired = desired
                 agent.last_sensed_danger = sensed_danger
@@ -230,22 +232,20 @@ class World:
             vel_x = agent.velocity.x + accel_x * dt
             vel_y = agent.velocity.y + accel_y * dt
             vel_x, vel_y = _clamp_length_xy_f(vel_x, vel_y, speed_limit)
-            agent.velocity.update(vel_x, vel_y)
-            new_position = Vector2(
+            agent.position.update(
                 agent.position.x + vel_x * dt,
                 agent.position.y + vel_y * dt,
             )
-            new_position = steering.resolve_overlap(
-                self, new_position, self._neighbor_offsets, neighbor_dist_sq
+            steering.resolve_overlap(self, agent.position, self._neighbor_offsets, neighbor_dist_sq)
+            pos_x, pos_y, vel_x, vel_y = self._reflect(
+                agent.position.x, agent.position.y, vel_x, vel_y, config.world_size
             )
-            reflected_position, reflected_velocity = self._reflect(
-                new_position, agent.velocity, config.world_size
-            )
-            agent.position = reflected_position
-            agent.velocity.update(reflected_velocity)
+            agent.position.update(pos_x, pos_y)
+            agent.velocity.update(vel_x, vel_y)
             self._update_heading(agent)
             agent.age += dt
 
+            base_cell_key = self._cell_key(agent.position)
             births += lifecycle.apply_life_cycle(
                 self,
                 agent,
@@ -258,12 +258,12 @@ class World:
                 population=current_population,
                 sim_time=sim_time,
                 traits=traits,
+                base_cell_key=base_cell_key,
             )
             if agent.state == AgentState.FLEE or sensed_danger:
-                danger_key = self._cell_key(agent.position)
                 pending_danger = self._pending_danger
-                pending_danger[danger_key] = (
-                    pending_danger.get(danger_key, 0.0)
+                pending_danger[base_cell_key] = (
+                    pending_danger.get(base_cell_key, 0.0)
                     + self._config.environment.danger_pulse_on_flee
                 )
             if agent.alive:
@@ -629,10 +629,9 @@ class World:
         return deaths
 
     @staticmethod
-    def _reflect(position: Vector2, velocity: Vector2, world_size: float) -> tuple[Vector2, Vector2]:
-        x, y = position.x, position.y
-        vx, vy = velocity.x, velocity.y
-
+    def _reflect(
+        x: float, y: float, vx: float, vy: float, world_size: float
+    ) -> tuple[float, float, float, float]:
         while True:
             crossed = False
             if x < 0:
@@ -654,7 +653,7 @@ class World:
             if not crossed:
                 break
 
-        return Vector2(x, y), Vector2(vx, vy)
+        return x, y, vx, vy
 
     def _active_group_ids(self) -> Set[int]:
         groups: Set[int] = set()

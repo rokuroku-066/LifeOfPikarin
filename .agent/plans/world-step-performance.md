@@ -6,60 +6,64 @@ Per repository rules, this plan is maintained in accordance with `.agent/PLANS.m
 
 ## Purpose / Big Picture
 
-Improve the per-tick performance of the terrarium simulation by reducing redundant work, cutting temporary allocations, and batching environment field updates while preserving deterministic simulation behavior. The user-visible effect is faster ticks with identical simulation outcomes, verified by running the existing Python tests and a deterministic headless run recipe.
+Improve per-tick performance of the terrarium simulation by removing hot-loop allocations and redundant per-agent computations in `World.step`, group membership updates, overlap resolution, and lifecycle updates. The user-visible effect is faster ticks with identical simulation outcomes, verified by running the required Python tests and a deterministic headless run recipe.
 
 ## Progress
 
-- [x] (2025-09-19 01:38Z) Inspect current `World.step` hot paths, pending field queues, and metrics storage in `src/terrarium/world.py` and `src/terrarium/environment.py`.
-- [x] (2025-09-19 01:38Z) Implement hot-loop optimizations (duplicate checks, neighbor count reuse, scalar integration, squared distance comparisons, in-place normalizations) and batch field updates by cell key.
-- [x] (2025-09-19 01:38Z) Update metrics storage to bounded history and apply `@dataclass(slots=True)` to metrics/snapshot types; adjust docs/tests as needed.
-- [x] (2025-09-19 01:38Z) Run required Python version check, install deps, and execute `pytest tests/python`.
-- [x] (2025-09-19 01:38Z) Summarize outcomes and verification steps.
+- [x] (2025-09-24 02:10Z) Inspect `World.step` and the hot per-agent loops in `src/terrarium/sim/core/world.py`, `src/terrarium/sim/systems/steering.py`, `src/terrarium/sim/systems/groups.py`, and `src/terrarium/sim/systems/lifecycle.py`.
+- [x] (2025-09-24 02:28Z) Remove per-tick Vector2 allocations in `_reflect` and `resolve_overlap`, replace position assignment with in-place updates, and reuse scratch `paired_ids`.
+- [x] (2025-09-24 02:28Z) Precompute group detach radius and base cell keys in `World.step` and pass them into group/lifecycle helpers.
+- [x] (2025-09-24 02:32Z) Update documentation to reflect the new hot-loop strategy and run required Python checks/tests.
+- [x] (2025-09-24 02:33Z) Summarize outcomes and verification steps.
 
 ## Surprises & Discoveries
 
-In-place position updates mutated shared `Vector2` instances in tests. The position update was switched back to assignment to preserve prior semantics while keeping scalar integration for performance.
+In-place position updates mutated a shared `Vector2` used in a group-base test. The test now snapshots the initial coordinates to avoid relying on mutable shared references.
 
 ## Decision Log
 
-- Decision: Store metrics in a bounded `collections.deque` to prevent unbounded memory growth.
-  Rationale: Long-running simulation sessions should not accumulate unlimited metric history.
-  Date/Author: 2025-09-19 / Codex
+- Decision: Use in-place updates for position/velocity and return scalar values from `_reflect` to avoid temporary `Vector2` allocations.
+  Rationale: This removes per-agent allocations in the hot loop without changing behavior.
+  Date/Author: 2025-09-24 / Codex
 
 ## Outcomes & Retrospective
 
-`World.step` now reuses neighbor counts, avoids redundant danger checks, and reduces temporary vector allocations by using scalar integration and in-place normalization where safe. Environment field updates are batched per cell, and only the latest metrics sample is stored to prevent accumulation. All required Python tests pass.
+`World.step` now updates positions in place, `resolve_overlap` clamps corrections without allocating new `Vector2` instances, and group/lifecycle helpers receive precomputed detachment radii and cell keys. The group base test was updated to avoid relying on shared mutable vectors. Required Python tests pass.
 
 ## Context and Orientation
 
-The simulation core lives in `src/terrarium/world.py`, where `World.step` advances agents and records `TickMetrics`. Environment fields (food, danger, pheromone) are managed by `src/terrarium/environment.py`. The WebSocket snapshot schema and metrics expectations are documented in `docs/snapshot.md`, and overall behavior is described in `docs/DESIGN.md`.
+The simulation core lives in `src/terrarium/sim/core/world.py`, where `World.step` advances agents and records `TickMetrics`. Group and lifecycle logic live in `src/terrarium/sim/systems/groups.py` and `src/terrarium/sim/systems/lifecycle.py`, while overlap correction and steering live in `src/terrarium/sim/systems/steering.py`. The overall behavior is described in `docs/DESIGN.md`.
 
 Key hotspots include:
 1. `World.step` agent loop and steering integration.
-2. Environment sampling and gradient calculations in `_compute_desired_velocity`.
-3. Pending field event queues (`_pending_food`, `_pending_danger`, `_pending_pheromone`) applied in `_apply_field_events`.
+2. Overlap resolution in `steering.resolve_overlap`.
+3. Group membership updates in `groups.update_group_membership`.
+4. Lifecycle updates in `lifecycle.apply_life_cycle`.
 
 Terms:
 - “cell key” refers to the integer grid coordinate used by `EnvironmentGrid` to access per-cell fields.
-- “in-place normalization” uses `Vector2.normalize_ip()` to avoid allocating new vectors.
+- “in-place update” means calling `Vector2.update(x, y)` instead of replacing the `Vector2` instance.
 
 ## Plan of Work
 
-Edit `src/terrarium/world.py` to remove duplicate `has_danger` lookups, reuse neighbor count in the hot loop, move integration math to scalar paths, and use in-place normalization for gradient vectors. Replace list-based pending field queues with dictionaries keyed by cell (and group for pheromones) to aggregate updates. Introduce helper functions to reuse a precomputed environment cell key for sampling and gradients.
+Edit `src/terrarium/sim/core/world.py` to avoid allocating `Vector2` in `_reflect`, update positions in place, reuse a scratch set for `paired_ids`, and compute group detachment radius and base cell keys once per agent.
 
-Edit `src/terrarium/environment.py` to accept tuple-based pheromone updates so batched cell-key aggregation can be applied without extra coordinate conversion.
+Edit `src/terrarium/sim/systems/steering.py` to update `resolve_overlap` in-place using scalar correction values.
 
-Edit `docs/DESIGN.md` and/or `docs/snapshot.md` to document the bounded metrics history behavior.
+Edit `src/terrarium/sim/systems/groups.py` to accept precomputed `detach_radius_sq` and close-neighbor thresholds passed from `World.step`.
 
-Adjust tests in `tests/python/test_world.py` if required for the metrics container change.
+Edit `src/terrarium/sim/systems/lifecycle.py` to accept a precomputed base cell key from `World.step`.
+
+Update `docs/DESIGN.md` to mention the in-place hot-loop strategy for positions/overlap correction.
 
 ## Concrete Steps
 
-1. Update `World.step` in `src/terrarium/world.py` with scalar integration and cached neighbor counts; reuse environment cell keys and aggregate pending field updates by cell key.
-2. Update `EnvironmentGrid.add_pheromone` in `src/terrarium/environment.py` to accept either `Vector2` or a precomputed cell key tuple.
-3. Update `TickMetrics`/`Snapshot*` dataclasses to use `slots=True` and store metrics in a bounded `deque`.
-4. Update docs and tests to align with the new metrics storage.
-5. Run:
+1. Update `World.step` in `src/terrarium/sim/core/world.py` to use in-place position updates, reuse scratch `paired_ids`, and pass precomputed detachment radius/base cell keys to group/lifecycle helpers.
+2. Update `_reflect` to return scalars and update caller code accordingly.
+3. Update `resolve_overlap` in `src/terrarium/sim/systems/steering.py` to apply corrections in place using scalar clamping.
+4. Update `groups.update_group_membership` and `lifecycle.apply_life_cycle` signatures to accept precomputed values.
+5. Update `docs/DESIGN.md` with a short note on the in-place hot-loop strategy.
+6. Run:
    - `python --version`
    - `pip install -r requirements.txt`
    - `pytest tests/python`
@@ -72,7 +76,7 @@ Expected transcript snippet (examples):
 
 ## Validation and Acceptance
 
-- Deterministic smoke run: `python -m terrarium.headless --steps 200 --seed 42 --summary tests/artifacts/summary.json` should complete without errors and show stable population metrics in the summary JSON.
+- Deterministic smoke run: `python -m terrarium.app.headless --steps 200 --seed 42 --summary tests/artifacts/summary.json` should complete without errors and show stable population metrics in the summary JSON.
 - Performance sanity check: confirm tick duration remains reasonable with default population (200 agents) by observing `tick_duration_ms` in metrics output; no evidence of per-tick regressions versus baseline.
 - Long-run stability: population metrics should not monotonically explode or collapse during the short smoke run; stress and reproduction factors remain unchanged.
 - No O(N²): neighbor interactions continue to use `SpatialGrid.collect_neighbors_precomputed` in `World.step`.

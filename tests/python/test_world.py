@@ -430,6 +430,7 @@ def test_appearance_inheritance_is_deterministic_and_mutates():
         neighbors=[mate],
         neighbor_dist_sq=[0.01],
         paired_ids=set(),
+        base_cell_key=world._cell_key(parent.position),
     )
     assert births == 1
     world._apply_births()
@@ -472,6 +473,7 @@ def test_appearance_inheritance_is_deterministic_and_mutates():
         neighbors=[mate_b],
         neighbor_dist_sq=[0.01],
         paired_ids=set(),
+        base_cell_key=world_b._cell_key(parent_b.position),
     )
     assert births_b == 1
     world_b._apply_births()
@@ -529,6 +531,7 @@ def test_pair_reproduction_requires_mate():
         neighbors=[],
         neighbor_dist_sq=[],
         paired_ids=set(),
+        base_cell_key=world._cell_key(parent.position),
     )
 
     assert births == 0
@@ -681,7 +684,12 @@ def test_disease_death_returns_zero_births():
     agent = world.agents[0]
 
     births = lifecycle.apply_life_cycle(
-        world, agent, neighbor_count=100, same_group_neighbors=0, can_create_groups=False
+        world,
+        agent,
+        neighbor_count=100,
+        same_group_neighbors=0,
+        can_create_groups=False,
+        base_cell_key=world._cell_key(agent.position),
     )
 
     assert births == 0
@@ -2017,6 +2025,8 @@ def test_group_base_registered_on_group_formation_point():
     world = World(config)
     world.agents.clear()
     origin = Vector2(1.0, 1.0)
+    origin_x = origin.x
+    origin_y = origin.y
     world.agents.extend(
         [
             Agent(
@@ -2049,8 +2059,8 @@ def test_group_base_registered_on_group_formation_point():
 
     assert world.agents[0].group_id == 0
     base = world._group_bases[0]  # type: ignore[attr-defined]
-    assert base.x == approx(origin.x)
-    assert base.y == approx(origin.y)
+    assert base.x == approx(origin_x)
+    assert base.y == approx(origin_y)
 
 
 def test_group_base_attraction_pulls_toward_base():
