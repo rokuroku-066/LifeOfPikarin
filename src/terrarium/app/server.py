@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict
+from collections import deque
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Set
+from typing import Dict, Set
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
@@ -12,6 +13,12 @@ from fastapi.staticfiles import StaticFiles
 
 from ..sim.core.config import SimulationConfig
 from ..sim.core.world import World
+
+
+@dataclass(frozen=True)
+class QueuedSnapshot:
+    tick: int
+    payload: str
 
 
 class SimulationController:
@@ -23,7 +30,10 @@ class SimulationController:
         self.tick = 0
         self.speed_multiplier = 1.0
         self.clients: Set[WebSocket] = set()
+        self._client_last_sent: Dict[WebSocket, int] = {}
+        self._snapshot_queue: deque[QueuedSnapshot] = deque()
         self._lock = asyncio.Lock()
+        self._queue_lock = asyncio.Lock()
         self._broadcast_task: asyncio.Task | None = None
 
     async def start(self) -> None:
@@ -38,6 +48,10 @@ class SimulationController:
         async with self._lock:
             self.world.reset()
             self.tick = 0
+        async with self._queue_lock:
+            self._snapshot_queue.clear()
+        for client in self._client_last_sent:
+            self._client_last_sent[client] = -1
         await self._broadcast_snapshot()
 
     async def _loop(self) -> None:
@@ -51,28 +65,49 @@ class SimulationController:
             if self.tick % self.broadcast_interval == 0:
                 await self._broadcast_snapshot()
 
-    async def _broadcast_snapshot(self) -> None:
-        if not self.clients:
-            return
+    async def acknowledge(self, tick: int) -> None:
+        async with self._queue_lock:
+            while self._snapshot_queue and self._snapshot_queue[0].tick <= tick:
+                self._snapshot_queue.popleft()
+
+    def _serialize_snapshot(self) -> QueuedSnapshot:
         snapshot = self.world.snapshot(self.tick)
-        payload = json.dumps(
-            {
+        payload = {
+            "type": "snapshot",
+            "tick": snapshot.tick,
+            "payload": {
                 "tick": snapshot.tick,
                 "metrics": asdict(snapshot.metrics),
                 "agents": snapshot.agents,
                 "world": asdict(snapshot.world),
                 "metadata": asdict(snapshot.metadata),
                 "fields": asdict(snapshot.fields),
-            }
-        )
+            },
+        }
+        return QueuedSnapshot(tick=snapshot.tick, payload=json.dumps(payload))
+
+    async def _send_pending_snapshots(self, client: WebSocket) -> None:
+        last_sent = self._client_last_sent.get(client, -1)
+        async with self._queue_lock:
+            pending = [item for item in self._snapshot_queue if item.tick > last_sent]
+        for item in pending:
+            await client.send_text(item.payload)
+            last_sent = item.tick
+        self._client_last_sent[client] = last_sent
+
+    async def _broadcast_snapshot(self) -> None:
+        queued = self._serialize_snapshot()
+        async with self._queue_lock:
+            self._snapshot_queue.append(queued)
         stale: Set[WebSocket] = set()
         for client in self.clients:
             try:
-                await client.send_text(payload)
+                await self._send_pending_snapshots(client)
             except WebSocketDisconnect:
                 stale.add(client)
         for client in stale:
             self.clients.discard(client)
+            self._client_last_sent.pop(client, None)
 
 
 app = FastAPI(title="Terrarium Web Simulation")
@@ -133,12 +168,22 @@ async def set_speed(payload: dict) -> JSONResponse:
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     controller.clients.add(websocket)
-    await controller._broadcast_snapshot()
+    controller._client_last_sent[websocket] = -1
+    await controller._send_pending_snapshots(websocket)
     try:
         while True:
-            await websocket.receive_text()
+            message = await websocket.receive_text()
+            try:
+                payload = json.loads(message)
+            except json.JSONDecodeError:
+                continue
+            if payload.get("type") == "ack":
+                tick = payload.get("tick")
+                if isinstance(tick, int):
+                    await controller.acknowledge(tick)
     except WebSocketDisconnect:
         controller.clients.discard(websocket)
+        controller._client_last_sent.pop(websocket, None)
 
 
 __all__ = ["app", "controller"]

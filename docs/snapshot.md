@@ -2,7 +2,18 @@
 
 The cube viewer in `src/terrarium/app/static/app.js` reads the snapshot payload emitted by the simulation WebSocket. The schema below keeps the existing Phase 1 contract stable while adding forward-compatible signals for richer animation in Phase 2.
 
-## Top-level fields
+## Delivery protocol (Phase 2 viewer queueing)
+
+The server wraps each snapshot in a typed envelope so the client can ACK rendered ticks:
+
+- Server → client: `{"type":"snapshot","tick":1234,"payload":{...}}`
+- Client → server: `{"type":"ack","tick":1234}`
+
+The server keeps an in-memory FIFO queue of snapshots and deletes any entries with `tick <= ack.tick` when it receives an ACK. The viewer renders snapshots in order from a local queue and sends an ACK when it advances from one snapshot to the next.
+
+## Snapshot payload fields
+
+The `payload` object inside the `snapshot` envelope contains:
 
 - `tick`: controller tick counter (integer).
 - `metrics`: per-tick metrics object (see below). `population` reflects the number of living agents.
