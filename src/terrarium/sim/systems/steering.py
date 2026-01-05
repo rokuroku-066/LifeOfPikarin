@@ -76,7 +76,28 @@ def compute_desired_velocity(
 
     if flee_vector.length_squared() > 1e-3:
         agent.state = AgentState.FLEE
-        return (flee_vector, sensed_danger) if return_sensed else flee_vector
+        flee_strength = 1.0
+        if danger_present:
+            flee_strength = max(flee_strength, min(1.0, danger_level))
+        desired_x = flee_vector.x
+        desired_y = flee_vector.y
+        if agent.group_id != world._UNGROUPED and neighbors:
+            cohesion_bias = group_cohesion(world, agent, neighbors, neighbor_offsets, dist_sq_list)
+            alignment_bias = alignment(world, agent, neighbors)
+            separation_bias = separation(world, agent, neighbors, neighbor_offsets, dist_sq_list)
+            keep = max(0.0, 1.0 - 0.7 * flee_strength)
+            desired_x += cohesion_bias.x * base_speed * 0.8 * keep
+            desired_y += cohesion_bias.y * base_speed * 0.8 * keep
+            desired_x += alignment_bias.x * base_speed * 0.5 * keep
+            desired_y += alignment_bias.y * base_speed * 0.5 * keep
+            desired_x += separation_bias.x * base_speed * 0.7
+            desired_y += separation_bias.y * base_speed * 0.7
+        boundary_bias, _boundary_proximity = boundary_avoidance(world, agent.position)
+        boundary_scale = base_speed * world._config.boundary_avoidance_weight
+        desired_x += boundary_bias.x * boundary_scale
+        desired_y += boundary_bias.y * boundary_scale
+        desired = Vector2(desired_x, desired_y)
+        return (desired, sensed_danger) if return_sensed else desired
 
     food_here = world._environment.sample_food(base_cell_key)
     food_gradient = Vector2()

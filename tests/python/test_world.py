@@ -2144,6 +2144,86 @@ def test_intergroup_avoidance_applies_without_triggering_flee():
     assert agent.state == AgentState.WANDER
 
 
+def test_flee_blends_ally_cohesion_and_alignment():
+    config = SimulationConfig(
+        seed=27,
+        time_step=1.0,
+        world_size=3.0,
+        cell_size=1.0,
+        initial_population=0,
+        boundary_margin=0.0,
+        environment=EnvironmentConfig(
+            food_per_cell=0.0,
+            food_regen_per_second=0.0,
+            food_consumption_rate=0.0,
+            danger_diffusion_rate=0.0,
+            danger_decay_rate=0.0,
+        ),
+        species=SpeciesConfig(
+            base_speed=1.0,
+            max_acceleration=10.0,
+            metabolism_per_second=0.0,
+            vision_radius=4.0,
+            wander_jitter=0.0,
+            reproduction_energy_threshold=12.0,
+            adult_age=0.0,
+        ),
+        feedback=FeedbackConfig(
+            group_cohesion_radius=4.0,
+            group_cohesion_weight=0.0,
+            ally_cohesion_weight=0.0,
+            ally_separation_weight=0.0,
+            other_group_separation_weight=0.0,
+            min_separation_weight=0.0,
+            other_group_avoid_weight=0.0,
+        ),
+    )
+    world = World(config)
+    env = world._environment  # type: ignore[attr-defined]
+    env._danger_field = {  # type: ignore[attr-defined]
+        (1, 1): 1.0,
+        (2, 1): 2.0,
+        (0, 1): 0.0,
+    }
+
+    def compute_desired(neighbors, neighbor_offsets):
+        agent = Agent(
+            id=210,
+            generation=0,
+            group_id=1,
+            position=Vector2(1.5, 1.5),
+            velocity=Vector2(),
+            energy=8.0,
+            age=5.0,
+            state=AgentState.WANDER,
+        )
+        speed_cap = world._trait_speed_limit(agent.traits)
+        desired = steering.compute_desired_velocity(
+            world, agent, neighbors, neighbor_offsets, speed_cap
+        )
+        return desired, agent.state
+
+    desired_solo, solo_state = compute_desired([], [])
+    ally = Agent(
+        id=211,
+        generation=0,
+        group_id=1,
+        position=Vector2(2.5, 1.5),
+        velocity=Vector2(1.0, 0.0),
+        energy=8.0,
+        age=5.0,
+        state=AgentState.WANDER,
+    )
+    desired_with_ally, ally_state = compute_desired([ally], [Vector2(1.0, 0.0)])
+
+    assert solo_state == AgentState.FLEE
+    assert ally_state == AgentState.FLEE
+    assert desired_solo.x < 0.0
+    assert desired_with_ally.x < 0.0
+    assert desired_with_ally.x > desired_solo.x
+    assert abs(desired_with_ally.y) < 1e-6
+
+
 def test_ally_cohesion_weight_scales_pull():
     base_feedback = dict(
         group_cohesion_weight=1.0,
