@@ -1,0 +1,304 @@
+{
+  "repo_notes": [
+    {
+      "content": "日本語で作成してください。"
+    }
+  ],
+  "pages": [
+    {
+      "title": "Overview",
+      "purpose": "Introduce Life Of Pikarin, summarizing its purpose as a deterministic, long-running terrarium simulation with strict Sim/View separation",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Quick Start",
+      "purpose": "Provide immediate instructions for running the simulation in both web and headless modes",
+      "parent": "Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Project Structure",
+      "purpose": "Describe the directory layout and key file locations within the repository",
+      "parent": "Overview",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Core Architecture Principles",
+      "purpose": "Explain the four fundamental architectural constraints that govern the entire system",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Sim/View Separation",
+      "purpose": "Detail the strict one-way data flow from simulation to visualization and why the View never drives the Sim",
+      "parent": "Core Architecture Principles",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Determinism and Reproducibility",
+      "purpose": "Explain how the simulation ensures reproducible results given the same seed and configuration",
+      "parent": "Core Architecture Principles",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Spatial Optimization (O(N²) Avoidance)",
+      "purpose": "Describe how SpatialGrid enables O(N) neighbor queries instead of O(N²) all-pairs logic",
+      "parent": "Core Architecture Principles",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Long-Run Stability and Negative Feedback",
+      "purpose": "Explain the feedback mechanisms that prevent population explosion or extinction over extended runs",
+      "parent": "Core Architecture Principles",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Simulation Core (src/terrarium/)",
+      "purpose": "Overview of the Python simulation engine and its major components",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "World: Simulation Orchestrator",
+      "purpose": "Document the World class, which orchestrates the simulation loop and agent interactions",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "World.step Tick Lifecycle",
+      "purpose": "Detail the execution phases within a single World.step call, including initialization, agent processing, and post-processing",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Agent Lifecycle",
+      "purpose": "Explain agent birth, death, energy metabolism, and reproduction mechanics",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Agent Steering System",
+      "purpose": "Document how agents calculate desired velocity from environmental factors, social forces, and internal states",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Group Dynamics",
+      "purpose": "Explain group formation, adoption, switching, splitting, and base attraction mechanics",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "EnvironmentGrid: Field Management",
+      "purpose": "Document the grid-based environmental field system for food, pheromones, and danger",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Food Field Mechanics",
+      "purpose": "Detail food regeneration, consumption, diffusion, and noise-based variation",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Pheromone Field Mechanics",
+      "purpose": "Explain per-group pheromone layers, deposition, diffusion, and gradient calculations",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Danger Field Mechanics",
+      "purpose": "Document danger pulses, diffusion, and agent flee responses (note: removal considerations)",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Diffusion and Decay Algorithm",
+      "purpose": "Explain the batched diffusion algorithm and environmental tick interval optimization",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "SpatialGrid: Neighbor Queries",
+      "purpose": "Document the uniform grid data structure and precomputed cell offset optimization for efficient spatial queries",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "SimulationConfig System",
+      "purpose": "Document the hierarchical configuration structure including SpeciesConfig, EnvironmentConfig, FeedbackConfig, EvolutionConfig, and AppearanceConfig",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Agent and AgentTraits Data Model",
+      "purpose": "Detail the Agent dataclass structure, AgentTraits for heritable characteristics, and memory optimization via __slots__",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "DeterministicRng",
+      "purpose": "Explain the dedicated RNG streams (main, climate, appearance, trait) and their salt-based derivation for reproducibility",
+      "parent": "Simulation Core (src/terrarium/)",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Web Server and API",
+      "purpose": "Overview of the FastAPI-based web server that hosts the viewer and provides control endpoints",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "FastAPI Application",
+      "purpose": "Document the server initialization, static file serving, and dependency structure",
+      "parent": "Web Server and API",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "SimulationController",
+      "purpose": "Explain the controller pattern for managing World lifecycle (start/stop/reset/speed)",
+      "parent": "Web Server and API",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "WebSocket Protocol",
+      "purpose": "Document the /ws endpoint, snapshot streaming frequency, and one-way data flow",
+      "parent": "Web Server and API",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Control API Endpoints",
+      "purpose": "Detail the /api/control/* REST endpoints for start, stop, reset, and speed adjustment",
+      "parent": "Web Server and API",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Snapshot Schema",
+      "purpose": "Document the JSON structure of simulation snapshots including agent data, field data, and metadata",
+      "parent": "Web Server and API",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    },
+    {
+      "title": "Web Viewer (Three.js)",
+      "purpose": "Overview of the browser-based 3D visualization component",
+      "page_notes": [
+        {
+          "content": ""
+        }
+      ]
+    }
+  ]
+}
