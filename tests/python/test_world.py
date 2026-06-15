@@ -214,6 +214,91 @@ def test_bootstrap_traits_use_trait_rng_stream():
         assert traits.kin_bias == approx(expected.kin_bias)
 
 
+def test_bootstrap_appearance_is_diverse_and_deterministic():
+    appearance = AppearanceConfig(
+        base_h=50.0,
+        base_s=0.9,
+        base_l=0.75,
+        initial_hue_spread_deg=40.0,
+        initial_saturation_jitter=0.05,
+        initial_lightness_jitter=0.04,
+    )
+    config = SimulationConfig(
+        seed=808,
+        initial_population=8,
+        appearance=appearance,
+        species=SpeciesConfig(base_speed=0.0, max_acceleration=0.0, vision_radius=0.0),
+        environment=EnvironmentConfig(food_per_cell=0.0, food_regen_per_second=0.0, food_consumption_rate=0.0),
+    )
+    world = World(config)
+    world_b = World(SimulationConfig(**{**config.__dict__}))
+
+    hues = [round(agent.appearance_h, 6) for agent in world.agents]
+    hues_b = [round(agent.appearance_h, 6) for agent in world_b.agents]
+
+    assert len(set(hues)) > 1
+    assert hues == hues_b
+    for agent in world.agents:
+        assert 0.0 <= agent.appearance_h < 360.0
+        assert 0.0 <= agent.appearance_s <= 1.0
+        assert 0.0 <= agent.appearance_l <= 1.0
+
+
+def test_group_appearance_anchor_pulls_group_children_together():
+    appearance = AppearanceConfig(
+        mutation_chance=0.0,
+        initial_hue_spread_deg=0.0,
+        initial_saturation_jitter=0.0,
+        initial_lightness_jitter=0.0,
+        group_anchor_strength=0.5,
+    )
+    world = World(SimulationConfig(seed=909, initial_population=0, appearance=appearance))
+    world._ensure_group_appearance_anchor(4, source_hue=100.0)
+    first = Agent(
+        id=1,
+        generation=0,
+        group_id=4,
+        position=Vector2(),
+        velocity=Vector2(),
+        energy=10.0,
+        age=10.0,
+        state=AgentState.WANDER,
+        appearance_h=20.0,
+    )
+    second = Agent(
+        id=2,
+        generation=0,
+        group_id=4,
+        position=Vector2(),
+        velocity=Vector2(),
+        energy=10.0,
+        age=10.0,
+        state=AgentState.WANDER,
+        appearance_h=40.0,
+    )
+
+    hue, _, _ = world._inherit_appearance_pair_with_group(first, second, bias_group_id=4)
+
+    assert hue == approx(65.0)
+
+
+def test_pair_trait_inheritance_preserves_parent_side_variation():
+    evolution = EvolutionConfig(
+        enabled=False,
+        trait_inheritance_segregation=1.0,
+        trait_inheritance_drift=0.0,
+        clamp=EvolutionClampConfig(speed=(0.5, 2.0)),
+    )
+    world = World(SimulationConfig(seed=515, initial_population=0, evolution=evolution))
+    low = AgentTraits(speed=0.5)
+    high = AgentTraits(speed=1.5)
+
+    inherited = [world._inherit_traits_pair(low, high).speed for _ in range(12)]
+
+    assert set(inherited).issubset({0.5, 1.5})
+    assert len(set(inherited)) > 1
+
+
 def test_traits_respect_clamp_after_births():
     evolution = EvolutionConfig(
         enabled=True,
@@ -432,6 +517,10 @@ def test_appearance_inheritance_is_deterministic_and_mutates():
         mutation_delta_h=12.0,
         mutation_delta_s=0.1,
         mutation_delta_l=0.1,
+        initial_hue_spread_deg=0.0,
+        initial_saturation_jitter=0.0,
+        initial_lightness_jitter=0.0,
+        group_anchor_strength=0.0,
     )
     feedback = FeedbackConfig(
         reproduction_base_chance=1.0,
@@ -545,6 +634,10 @@ def test_appearance_group_bias_clamps_hue_delta():
         bias_h_group_deg=4.0,
         mutation_delta_s=0.0,
         mutation_delta_l=0.0,
+        initial_hue_spread_deg=0.0,
+        initial_saturation_jitter=0.0,
+        initial_lightness_jitter=0.0,
+        group_anchor_strength=0.0,
     )
     feedback = FeedbackConfig(
         reproduction_base_chance=0.0,
@@ -624,6 +717,10 @@ def test_pair_appearance_bias_uses_child_group():
         bias_h_group_deg=2.5,
         mutation_delta_s=0.0,
         mutation_delta_l=0.0,
+        initial_hue_spread_deg=0.0,
+        initial_saturation_jitter=0.0,
+        initial_lightness_jitter=0.0,
+        group_anchor_strength=0.0,
     )
     config = SimulationConfig(
         seed=91,

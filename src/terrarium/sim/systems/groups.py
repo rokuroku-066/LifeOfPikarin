@@ -34,6 +34,7 @@ def register_group_base(world: World, group_id: int, position: Vector2) -> None:
     if group_id in world._group_bases:
         return
     world._group_bases[group_id] = Vector2(position)
+    world._ensure_group_appearance_anchor(group_id)
 
 
 def prune_group_bases(world: World, active_groups: Set[int]) -> None:

@@ -66,7 +66,7 @@ python -m terrarium.app.headless \
 - `--summary` は末尾 `--summary-window` tick のパーセンタイル・相関・ピークを JSON で書き出します。
 
 主要なパラメータは `src/terrarium/sim/core/config.py` の `SimulationConfig` 配下にあります。`SimulationConfig.from_yaml(path)` で外部 YAML を読み込むこともできます。
-appearance の Hue 変異には `appearance.bias_h_group_deg` を設定して群れ由来のバイアスを与えられます（デフォルトは `0.2`）。`0.0` の場合は従来どおりゼロ平均の突然変異になります。
+appearance の初期値は `appearance.initial_hue_spread_deg` / `initial_saturation_jitter` / `initial_lightness_jitter` で seed 決定論的にばらつきます。出生時は `appearance.bias_h_group_deg` による群れ方向の変異に加え、`appearance.group_anchor_strength` で群れごとの固定 Hue アンカーへ緩く寄せるため、群れ内ではまとまり、群れ間では違いが残ります。形質は `evolution.trait_inheritance_segregation` と `trait_inheritance_drift` により、親平均だけへ収束しすぎない継承を行います。
 
 ## Web ビューア（Three.js）
 
