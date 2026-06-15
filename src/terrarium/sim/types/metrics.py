@@ -15,3 +15,9 @@ class TickMetrics:
     neighbor_checks: int
     ungrouped: int
     tick_duration_ms: float = 0.0
+    group_memory_entries: int = 0
+    group_food_memory_hits: int = 0
+    group_food_memory_misses: int = 0
+    group_danger_memory_reports: int = 0
+    group_memory_inheritance_events: int = 0
+    group_memory_entropy: float = 0.0

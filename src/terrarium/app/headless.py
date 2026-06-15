@@ -54,6 +54,12 @@ _DETAILED_HEADER = [
     "group_stride_active",
     "group_stride_active_agents",
     "group_stride_skipped_agents",
+    "group_memory_entries",
+    "group_food_memory_hits",
+    "group_food_memory_misses",
+    "group_danger_memory_reports",
+    "group_memory_inheritance_events",
+    "group_memory_entropy",
 ]
 
 
@@ -195,6 +201,12 @@ def _format_detailed_row(world: World, metrics: object, tick: int, tick_ms: floa
         group_stride_active,
         group_stride_active_agents,
         group_stride_skipped_agents,
+        metrics.group_memory_entries,
+        metrics.group_food_memory_hits,
+        metrics.group_food_memory_misses,
+        metrics.group_danger_memory_reports,
+        metrics.group_memory_inheritance_events,
+        f"{metrics.group_memory_entropy:.4f}",
     ]
 
 

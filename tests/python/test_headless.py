@@ -66,6 +66,12 @@ def test_headless_detailed_log_header_and_ratios(tmp_path):
         "group_stride_active",
         "group_stride_active_agents",
         "group_stride_skipped_agents",
+        "group_memory_entries",
+        "group_food_memory_hits",
+        "group_food_memory_misses",
+        "group_danger_memory_reports",
+        "group_memory_inheritance_events",
+        "group_memory_entropy",
     ]
 
     first_row = rows[1]

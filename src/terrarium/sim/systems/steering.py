@@ -154,6 +154,7 @@ def compute_desired_velocity(
         if grouped and feedback.group_base_attraction_weight > 0.0
         else ZERO
     )
+    memory_bias = group_memory_bias(world, agent, base_cell_key) if grouped else ZERO
 
     pheromone_bias_x = 0.0
     pheromone_bias_y = 0.0
@@ -223,6 +224,9 @@ def compute_desired_velocity(
     base_scale = base_speed * feedback.group_base_attraction_weight
     desired_x += base_bias.x * base_scale
     desired_y += base_bias.y * base_scale
+    memory_scale = base_speed
+    desired_x += memory_bias.x * memory_scale
+    desired_y += memory_bias.y * memory_scale
     boundary_bias, boundary_proximity = boundary_avoidance(world, agent.position)
     boundary_scale = base_speed * world._config.boundary_avoidance_weight
     desired_x += boundary_bias.x * boundary_scale
@@ -242,6 +246,26 @@ def compute_desired_velocity(
     if return_sensed:
         return desired, sensed_danger
     return desired
+
+
+def group_memory_bias(world: World, agent: Agent, base_cell_key: tuple[int, int]) -> Vector2:
+    config = world._config.memory
+    if not config.enabled or agent.group_id == world._UNGROUPED:
+        return ZERO
+    stride = max(1, int(config.memory_query_stride))
+    tick = getattr(world, "_current_tick", 0)
+    if stride > 1 and (tick + agent.id) % stride != 0:
+        return agent.last_memory_bias
+    species = world._config.species
+    threshold = max(1e-6, species.reproduction_energy_threshold)
+    hunger = max(0.0, min(1.0, (threshold - agent.energy) / threshold))
+    if hunger <= 1e-6 and not world._group_memory.entries_for(agent.group_id):
+        agent.last_memory_bias = Vector2()
+        return agent.last_memory_bias
+    agent.last_memory_bias = world._group_memory.query_bias(
+        agent.group_id, agent.position, hunger, tick
+    )
+    return agent.last_memory_bias
 
 
 def separation(

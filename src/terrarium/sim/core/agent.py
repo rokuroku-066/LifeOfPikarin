@@ -52,3 +52,8 @@ class Agent:
     wander_time: float = 0.0
     last_desired: Vector2 = field(default_factory=Vector2)
     last_sensed_danger: bool = False
+    last_memory_bias: Vector2 = field(default_factory=Vector2)
+    last_food_cell: tuple[int, int] | None = None
+    last_food_tick: int = -1
+    last_danger_cell: tuple[int, int] | None = None
+    last_danger_tick: int = -1

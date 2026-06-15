@@ -281,6 +281,7 @@ def try_split_group(
             target_group = world._next_group_id
             world._next_group_id += 1
             register_group_base(world, target_group, agent.position)
+            world._group_memory.inherit_memory(previous_group, target_group, world._current_tick, world._rng)
         set_group(world, agent, target_group)
         if target_group != world._UNGROUPED and can_form_groups:
             recruit_split_neighbors(world, previous_group, target_group, neighbors, neighbor_offsets)
