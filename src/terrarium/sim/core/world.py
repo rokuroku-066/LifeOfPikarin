@@ -399,14 +399,20 @@ class World:
                 + self._config.environment.danger_pulse_on_flee
             )
             if agent.group_id != self._UNGROUPED:
-                agent.last_danger_cell = base_cell_key
-                agent.last_danger_tick = tick
-                self._group_memory.report_danger(
-                    agent.group_id,
-                    base_cell_key,
-                    self._config.environment.danger_pulse_on_flee,
-                    tick,
+                cooldown_ticks = max(0, int(self._config.memory.danger_report_cooldown_ticks))
+                can_report_danger = (
+                    agent.last_danger_cell != base_cell_key
+                    or tick - agent.last_danger_tick >= cooldown_ticks
                 )
+                if can_report_danger:
+                    agent.last_danger_cell = base_cell_key
+                    agent.last_danger_tick = tick
+                    self._group_memory.report_danger(
+                        agent.group_id,
+                        base_cell_key,
+                        self._config.environment.danger_pulse_on_flee,
+                        tick,
+                    )
 
     def _accumulate_agent_stats(self, aggregates: TickAggregates, agent: Agent) -> None:
         aggregates.population += 1

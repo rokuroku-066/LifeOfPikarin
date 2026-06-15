@@ -131,6 +131,7 @@ class MemoryConfig:
     memory_query_stride: int = 3
     min_report_food: float = 0.01
     min_report_danger: float = 0.10
+    danger_report_cooldown_ticks: int = 50
     report_neighbor_threshold: int = 2
     max_bias: float = 1.0
     split_inherit_top_k: int = 8
