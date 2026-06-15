@@ -12,7 +12,7 @@ from .config import SimulationConfig
 from .environment import EnvironmentGrid
 from .rng import DeterministicRng
 from .spatial_grid import SpatialGrid
-from ..systems import fields, groups, lifecycle, metrics as metrics_system, steering
+from ..systems import fields, group_memory, groups, lifecycle, metrics as metrics_system, steering
 from ..types.metrics import TickMetrics
 from ..types.snapshot import Snapshot, SnapshotFields, SnapshotMetadata, SnapshotWorld
 from ..utils.math2d import _clamp_length_xy_f, _clamp_value, _heading_from_velocity
@@ -69,6 +69,7 @@ class World:
         self._trait_rng = DeterministicRng(_derive_stream_seed(config.seed, _TRAIT_RNG_SALT))
         self._grid = SpatialGrid(config.cell_size)
         self._environment = EnvironmentGrid(config.cell_size, config.environment, config.world_size)
+        self._group_memory = group_memory.GroupMemory(config.memory, config.cell_size)
         self._agents: List[Agent] = []
         self._birth_queue: List[Agent] = []
         self._id_to_index: Dict[int, int] = {}
@@ -91,6 +92,7 @@ class World:
         self._next_group_id = 0
         self._max_population_seen = 0
         self._metrics: TickMetrics | None = None
+        self._current_tick = 0
         self._environment_accumulator = 0.0
         self._food_regen_noise_multiplier = 1.0
         self._food_regen_noise_target = 1.0
@@ -112,6 +114,7 @@ class World:
         self._agents.clear()
         self._birth_queue.clear()
         self._environment.reset()
+        self._group_memory.clear()
         self._grid.clear()
         self._neighbor_offsets.clear()
         self._neighbor_agents.clear()
@@ -132,6 +135,7 @@ class World:
         self._next_lineage_id = 0
         self._id_to_index.clear()
         self._metrics = None
+        self._current_tick = 0
         self._next_id = 0
         self._next_group_id = 0
         self._max_population_seen = 0
@@ -146,6 +150,7 @@ class World:
 
     def step(self, tick: int) -> TickMetrics:
         start = perf_counter()
+        self._current_tick = tick
         ctx = self._begin_tick(tick)
         self._rebuild_spatial_index(ctx)
 
@@ -173,7 +178,7 @@ class World:
                 traits,
             )
             aggregates.births += births_added
-            self._apply_danger_pulse_if_needed(agent, base_cell_key, sensed_danger)
+            self._apply_danger_pulse_if_needed(agent, base_cell_key, sensed_danger, ctx.tick)
             if agent.alive:
                 self._accumulate_agent_stats(aggregates, agent)
 
@@ -187,6 +192,7 @@ class World:
             aggregates.neighbor_checks,
             elapsed_ms,
             stats,
+            self._group_memory.summary(ctx.tick),
         )
         self._metrics = metrics
         return self._metrics
@@ -384,7 +390,7 @@ class World:
         )
 
     def _apply_danger_pulse_if_needed(
-        self, agent: Agent, base_cell_key: tuple[int, int], sensed_danger: bool
+        self, agent: Agent, base_cell_key: tuple[int, int], sensed_danger: bool, tick: int
     ) -> None:
         if agent.state == AgentState.FLEE or sensed_danger:
             pending_danger = self._pending_danger
@@ -392,6 +398,15 @@ class World:
                 pending_danger.get(base_cell_key, 0.0)
                 + self._config.environment.danger_pulse_on_flee
             )
+            if agent.group_id != self._UNGROUPED:
+                agent.last_danger_cell = base_cell_key
+                agent.last_danger_tick = tick
+                self._group_memory.report_danger(
+                    agent.group_id,
+                    base_cell_key,
+                    self._config.environment.danger_pulse_on_flee,
+                    tick,
+                )
 
     def _accumulate_agent_stats(self, aggregates: TickAggregates, agent: Agent) -> None:
         aggregates.population += 1
@@ -423,6 +438,8 @@ class World:
         groups.prune_group_bases(self, active_groups)
         fields.apply_field_events(self)
         fields.tick_environment(self, active_groups)
+        if self._environment_accumulator < ctx.dt:
+            self._group_memory.decay(active_groups)
 
         return self._update_cached_population_stats(
             aggregates.population,

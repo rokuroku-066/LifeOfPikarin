@@ -115,6 +115,31 @@ class FeedbackConfig:
 
 
 @dataclass
+class MemoryConfig:
+    enabled: bool = True
+    max_entries_per_group: int = 24
+    food_learn_rate: float = 0.35
+    danger_learn_rate: float = 0.50
+    success_learn_rate: float = 0.20
+    food_decay_per_env_tick: float = 0.92
+    danger_decay_per_env_tick: float = 0.96
+    success_decay_per_env_tick: float = 0.94
+    disappointment_decay: float = 0.65
+    food_memory_weight: float = 0.14
+    danger_memory_weight: float = 0.22
+    success_memory_weight: float = 0.06
+    memory_query_stride: int = 3
+    min_report_food: float = 0.01
+    min_report_danger: float = 0.10
+    report_neighbor_threshold: int = 2
+    max_bias: float = 1.0
+    split_inherit_top_k: int = 8
+    split_inherit_decay_min: float = 0.4
+    split_inherit_decay_max: float = 0.8
+    eps: float = 0.001
+
+
+@dataclass
 class EvolutionClampConfig:
     speed: tuple[float, float] = (0.5, 2.0)
     metabolism: tuple[float, float] = (0.5, 2.0)
@@ -179,6 +204,7 @@ class SimulationConfig:
     species: SpeciesConfig = field(default_factory=SpeciesConfig)
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
     evolution: EvolutionConfig = field(default_factory=EvolutionConfig)
     appearance: AppearanceConfig = field(default_factory=AppearanceConfig)
 
@@ -213,6 +239,7 @@ def load_config(raw: dict) -> SimulationConfig:
     removed_feedback_keys = {"post_peak_min_groups", "post_peak_max_groups", "max_groups", "post_peak_group_seed_size"}
     feedback_values = {k: v for k, v in feedback_raw.items() if k not in removed_feedback_keys}
     feedback = FeedbackConfig(**feedback_values)
+    memory = MemoryConfig(**raw.get("memory", {}))
     evolution_raw = raw.get("evolution", {})
     clamp = EvolutionClampConfig(
         speed=_pair(clamp_raw.get("speed"), default_clamp.speed),
@@ -231,12 +258,13 @@ def load_config(raw: dict) -> SimulationConfig:
     sim_values = {
         k: v
         for k, v in raw.items()
-        if k not in {"species", "environment", "feedback", "resource_patches", "evolution", "appearance"}
+        if k not in {"species", "environment", "feedback", "memory", "resource_patches", "evolution", "appearance"}
     }
     return SimulationConfig(
         species=species,
         environment=env,
         feedback=feedback,
+        memory=memory,
         evolution=evolution,
         appearance=appearance,
         **sim_values,

@@ -94,3 +94,13 @@
 - **必須テスト**: `pytest tests/python`。決定性、近傍取得、形質クランプ、環境ノイズの再現性、スナップショット内容、人口上限などをカバー。
 - **長時間確認**: `python -m terrarium.app.headless --steps 5000 --seed 42 --log tests/artifacts/metrics.csv --log-format detailed --summary tests/artifacts/summary.json` で headless 実行し、ピーク人口・tick 時間・近傍チェックなどが安定していることを確認。
 - **表示確認**: `uvicorn terrarium.app.server:app --reload --port 8000` を起動し、ブラウザでスナップショットが補間表示されることを目視。Sim を止めても View がスムーズに補間/再接続することを確認する。
+
+## GroupMemory / RumorMap shared group memory
+
+Phase 2 simulation now includes a small Model-side `GroupMemory` system for group-level place memory. Each grouped agent can report the environment cell where it ate food or sensed danger. Entries store only cell, food, danger, success, last-seen tick, and hit count, and each group is capped by `memory.max_entries_per_group` so memory lookup remains bounded. Food memories pull hungry grouped agents weakly; danger memories repel grouped agents weakly; success memories provide a very small base-like attraction after births.
+
+The memory system is deterministic and uses existing fixed simulation ticks plus the seeded simulation RNG for degraded inheritance when a group splits or mutates. Memory decays on the same cadence as environment field updates, and stale/weak entries are removed. Split child groups inherit only the top `memory.split_inherit_top_k` entries from the parent, with values degraded by `memory.split_inherit_decay_min` through `memory.split_inherit_decay_max`.
+
+This is Simulation-only state. Viewer snapshots remain one-way outputs from the simulation, and the View never controls or delays memory behavior. The implementation avoids all-pairs work: neighbor reporting still uses SpatialGrid-derived local neighbor counts, while memory queries scan only the bounded per-group entry list and are strided by `memory.memory_query_stride`.
+
+Headless detailed logs include `group_memory_entries`, `group_food_memory_hits`, `group_food_memory_misses`, `group_danger_memory_reports`, `group_memory_inheritance_events`, and `group_memory_entropy` for observing culture-like behavior as measured outcomes rather than fixed group personalities.

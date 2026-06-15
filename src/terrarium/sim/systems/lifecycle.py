@@ -30,6 +30,7 @@ def mutate_group(
         new_group = world._next_group_id
         world._next_group_id += 1
         register_group_base(world, new_group, position)
+        world._group_memory.inherit_memory(group_id, new_group, world._current_tick, world._rng)
         return new_group
     return group_id
 
@@ -91,6 +92,19 @@ def apply_life_cycle(
             world._environment.consume_food(base_cell_key, consumed)
             gained_energy += consumed
     agent.energy += gained_energy
+    if agent.group_id != world._UNGROUPED:
+        tick = int(round(sim_time / max(world._config.time_step, 1e-12)))
+        if gained_energy > world._config.memory.min_report_food:
+            agent.last_food_cell = base_cell_key
+            agent.last_food_tick = tick
+            world._group_memory.report_food(agent.group_id, base_cell_key, gained_energy, tick)
+        else:
+            world._group_memory.reinforce_food_visit(
+                agent.group_id,
+                base_cell_key,
+                gained_energy,
+                tick,
+            )
 
     allow_reproduction = world._config.initial_population >= 10
     if (
@@ -207,6 +221,12 @@ def apply_life_cycle(
                     world._birth_queue.append(child)
                     births_added += 1
                     if child_group != world._UNGROUPED:
+                        world._group_memory.report_success(
+                            child_group,
+                            base_cell_key,
+                            1.0,
+                            int(round(sim_time / max(world._config.time_step, 1e-12))),
+                        )
                         pheromone_key = (base_cell_key, child_group)
                         pending_pheromone[pheromone_key] = (
                             pending_pheromone.get(pheromone_key, 0.0)
