@@ -133,6 +133,8 @@ class EvolutionConfig:
     mutation_strength: float = 0.05
     trait_mutation_chance: float = 1.0
     lineage_mutation_chance: float = 0.01
+    trait_inheritance_segregation: float = 0.65
+    trait_inheritance_drift: float = 0.02
     speed_mutation_weight: float = 1.0
     metabolism_mutation_weight: float = 0.5
     disease_resistance_mutation_weight: float = 0.5
@@ -155,6 +157,10 @@ class AppearanceConfig:
     bias_h_group_deg: float = 1.0
     mutation_delta_s: float = 0.08
     mutation_delta_l: float = 0.08
+    initial_hue_spread_deg: float = 70.0
+    initial_saturation_jitter: float = 0.08
+    initial_lightness_jitter: float = 0.06
+    group_anchor_strength: float = 0.35
 
 
 @dataclass

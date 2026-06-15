@@ -26,7 +26,7 @@
 - **グリッド**: `cell_size=5.5` の SpatialGrid を共有（環境も同セル幅）。
 - **初期個体**: `initial_population=200` をランダム配置・速度でブートストラップ。`max_population=700` を超えてスポーンしない。
 - **エージェント状態**: 位置/速度/heading、エネルギー、年齢、ストレス、グループ ID（未所属は -1）、ワンダー方向と残時間、孤立秒数、グループクールダウン。
-- **形質（`AgentTraits`）**: `speed` / `metabolism` / `disease_resistance` / `fertility` に加え `sociality` / `territoriality` / `loyalty` / `founder` / `kin_bias`。初期個体は clamp 範囲から決定論的に乱数サンプリングされる（メイン RNG とは独立の trait ストリーム）。`EvolutionConfig` に従い変異・クランプし、`trait_mutation_chance` と `mutation_strength`、各ウェイトで揺らぐ。系譜は `lineage_id` を持ち、必要に応じて新規割り当て。
+- **形質（`AgentTraits`）**: `speed` / `metabolism` / `disease_resistance` / `fertility` に加え `sociality` / `territoriality` / `loyalty` / `founder` / `kin_bias`。初期個体は clamp 範囲から決定論的に乱数サンプリングされる（メイン RNG とは独立の trait ストリーム）。出生時の形質は親平均だけではなく、`trait_inheritance_segregation` で親のどちらか寄りに戻す分離成分と `trait_inheritance_drift` の小さな揺らぎを加えてから、`EvolutionConfig` に従い変異・クランプする。これにより家族内の類似性を保ちながら世代平均への過度な収束を抑える。系譜は `lineage_id` を持ち、必要に応じて新規割り当て。
 - **サイズ算出**: 成熟度（`adult_age`）とエネルギーを 0.4〜1.0 のスケールにマップし、スナップショットへ出力。
 
 ## 3. 1 tick の処理フロー (`World.step`)
@@ -46,7 +46,7 @@
 - **孤立/離脱**: 所属中に至近味方がしきい値未満の時間が続くと乗換または未所属化。`loyalty` で猶予時間をスケールし、新規グループ生成は `founder` と確率で決定。
 - **分裂**: 同グループ近傍が多くストレスが高いと `group_split_*` パラメータに基づき分裂。`founder` に応じて新グループ生成や近傍リクルートを行う。
 - **拠点**: 形成・分裂・出生変異で拠点座標を記録。未所属は近傍拠点へ弱い吸引を受け、所属中は `group_base_attraction_weight` で緩やかに帰巣。存続しないグループの拠点は pruning。
-- **出生時のグループ変異**: 親が未所属なら `group_birth_seed_chance`、所属中なら `group_mutation_chance` を `founder` 倍率付きで判定し、新グループを派生させる。
+- **出生時のグループ変異**: 親が未所属なら `group_birth_seed_chance`、所属中なら `group_mutation_chance` を `founder` 倍率付きで判定し、新グループを派生させる。 各グループには決定論的な外観 Hue アンカーがあり、同じ群れの子は `group_anchor_strength` の範囲でそのアンカーへ緩く寄るため、群れ内のまとまりと群れ間の差異が同時に残る。
 
 ## 5. Steering と行動決定
 
@@ -66,7 +66,7 @@
 - **過密ペナルティ**: `local_density_soft_cap` 超過でストレス蓄積と疾病確率上昇（`disease_resistance` で低減）。疾病死・エネルギー枯渇・寿命超過・確率ハザードで死亡した場合、食料を環境へ返還。
 - **摂食**: そのセルの食料を `food_consumption_rate` まで消費しエネルギー獲得。
 - **繁殖**: 初期人口が十分な場合のみ許可。エネルギー・年齢・人口上限を満たした個体が近傍からペアを選び、近傍密度と同盟人数で確率が減衰する。形質係数（`fertility`、`speed`、`disease_resistance`）は両親の幾何平均で反映し、成功すると両親がエネルギーを分担して子へ譲渡＋出産コスト支払い。
-- **出生**: 子は親の中間地点近傍に生成。形質は両親平均に変異を加え、系譜は片親を継承し一定確率で新規化。所属グループは片親から 50/50 継承して変異ロジックを適用し、出生地点へフェロモンをペンディング。
+- **出生**: 子は親の中間地点近傍に生成。形質は両親の値から分離継承で親側の差を一部残し、その後に変異を加える。系譜は片親を継承し一定確率で新規化。所属グループは片親から 50/50 継承して変異ロジックを適用し、出生地点へフェロモンをペンディング。
 - **ハザード**: 基礎＋年齢＋近傍密度に応じた確率死を毎 tick 判定。死亡・出生ともに後段で環境フィールドへ反映。
 
 ## 7. 環境フィールド

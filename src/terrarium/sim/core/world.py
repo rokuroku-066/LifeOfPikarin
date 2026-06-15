@@ -85,6 +85,7 @@ class World:
         self._group_lineage_counts: Dict[int, int] = {}
         self._group_sizes: Dict[int, int] = {}
         self._group_bases: Dict[int, Vector2] = {}
+        self._group_appearance_hues: Dict[int, float] = {}
         self._next_lineage_id = 0
         self._next_id = 0
         self._next_group_id = 0
@@ -123,6 +124,7 @@ class World:
         self._group_sizes.clear()
         self._group_lineage_counts.clear()
         self._group_bases.clear()
+        self._group_appearance_hues.clear()
         self._rng.reset()
         self._climate_rng.reset()
         self._appearance_rng.reset()
@@ -458,12 +460,12 @@ class World:
             traits = self._sample_initial_traits()
             lineage = self._allocate_lineage_id()
             speed_limit = self._trait_speed_limit(traits)
-            appearance = self._config.appearance
             pos = Vector2(
                 self._rng.next_range(0.0, self._config.world_size),
                 self._rng.next_range(0.0, self._config.world_size),
             )
             velocity = self._rng.next_unit_circle() * (speed_limit * 0.3)
+            appearance_h, appearance_s, appearance_l = self._sample_initial_appearance()
             agent = Agent(
                 id=self._next_id,
                 generation=0,
@@ -477,15 +479,41 @@ class World:
                 lineage_id=lineage,
                 traits=traits,
                 traits_dirty=False,
-                appearance_h=appearance.base_h,
-                appearance_s=appearance.base_s,
-                appearance_l=appearance.base_l,
+                appearance_h=appearance_h,
+                appearance_s=appearance_s,
+                appearance_l=appearance_l,
                 wander_dir=self._rng.next_unit_circle(),
                 wander_time=self._config.species.wander_refresh_seconds,
                 last_desired=velocity.copy(),
             )
             self._agents.append(agent)
             self._next_id += 1
+
+    def _sample_initial_appearance(self) -> tuple[float, float, float]:
+        appearance = self._config.appearance
+        hue = appearance.base_h
+        saturation = appearance.base_s
+        lightness = appearance.base_l
+        if appearance.initial_hue_spread_deg > 0.0:
+            hue += self._appearance_rng.next_range(
+                -appearance.initial_hue_spread_deg,
+                appearance.initial_hue_spread_deg,
+            )
+        if appearance.initial_saturation_jitter > 0.0:
+            saturation += self._appearance_rng.next_range(
+                -appearance.initial_saturation_jitter,
+                appearance.initial_saturation_jitter,
+            )
+        if appearance.initial_lightness_jitter > 0.0:
+            lightness += self._appearance_rng.next_range(
+                -appearance.initial_lightness_jitter,
+                appearance.initial_lightness_jitter,
+            )
+        return (
+            self._wrap_hue(hue),
+            _clamp_value(saturation, 0.0, 1.0),
+            _clamp_value(lightness, 0.0, 1.0),
+        )
 
     def _refresh_vision_cache(self) -> None:
         self._vision_radius = self._config.species.vision_radius
@@ -611,17 +639,30 @@ class World:
             return (first + second) * 0.5 % 360.0
         return math.degrees(math.atan2(y, x)) % 360.0
 
+    def _inherit_trait_value(self, first: float, second: float) -> float:
+        evolution = self._config.evolution
+        midpoint = (first + second) * 0.5
+        half_span = abs(first - second) * 0.5
+        segregation = max(0.0, min(1.0, evolution.trait_inheritance_segregation))
+        drift = max(0.0, evolution.trait_inheritance_drift)
+        if half_span > 1e-12 and segregation > 0.0:
+            side = -1.0 if self._rng.next_float() < 0.5 else 1.0
+            midpoint += side * half_span * segregation
+        if drift > 0.0:
+            midpoint += self._rng.next_range(-drift, drift)
+        return midpoint
+
     def _inherit_traits_pair(self, first: AgentTraits, second: AgentTraits) -> AgentTraits:
         averaged = AgentTraits(
-            speed=(first.speed + second.speed) * 0.5,
-            metabolism=(first.metabolism + second.metabolism) * 0.5,
-            disease_resistance=(first.disease_resistance + second.disease_resistance) * 0.5,
-            fertility=(first.fertility + second.fertility) * 0.5,
-            sociality=(first.sociality + second.sociality) * 0.5,
-            territoriality=(first.territoriality + second.territoriality) * 0.5,
-            loyalty=(first.loyalty + second.loyalty) * 0.5,
-            founder=(first.founder + second.founder) * 0.5,
-            kin_bias=(first.kin_bias + second.kin_bias) * 0.5,
+            speed=self._inherit_trait_value(first.speed, second.speed),
+            metabolism=self._inherit_trait_value(first.metabolism, second.metabolism),
+            disease_resistance=self._inherit_trait_value(first.disease_resistance, second.disease_resistance),
+            fertility=self._inherit_trait_value(first.fertility, second.fertility),
+            sociality=self._inherit_trait_value(first.sociality, second.sociality),
+            territoriality=self._inherit_trait_value(first.territoriality, second.territoriality),
+            loyalty=self._inherit_trait_value(first.loyalty, second.loyalty),
+            founder=self._inherit_trait_value(first.founder, second.founder),
+            kin_bias=self._inherit_trait_value(first.kin_bias, second.kin_bias),
         )
         if not self._config.evolution.enabled:
             return self._clamp_traits(averaged)
@@ -654,6 +695,27 @@ class World:
             averaged.kin_bias += self._rng.next_range(-strength, strength) * evolution.kin_bias_mutation_weight
         return self._clamp_traits(averaged)
 
+    def _ensure_group_appearance_anchor(self, group_id: int, source_hue: float | None = None) -> None:
+        if group_id == self._UNGROUPED or group_id in self._group_appearance_hues:
+            return
+        if source_hue is None:
+            golden_angle = 137.50776405003785
+            source_hue = self._config.appearance.base_h + group_id * golden_angle
+        self._group_appearance_hues[group_id] = self._wrap_hue(source_hue)
+
+    def _group_appearance_hue(self, group_id: int) -> float | None:
+        if group_id == self._UNGROUPED:
+            return None
+        self._ensure_group_appearance_anchor(group_id)
+        return self._group_appearance_hues.get(group_id)
+
+    def _blend_hue_toward(self, hue: float, target_hue: float | None, strength: float) -> float:
+        if target_hue is None or strength <= 0.0:
+            return self._wrap_hue(hue)
+        strength = max(0.0, min(1.0, strength))
+        diff = ((target_hue - hue + 540.0) % 360.0) - 180.0
+        return self._wrap_hue(hue + diff * strength)
+
     def _inherit_appearance_pair(self, first: Agent, second: Agent) -> tuple[float, float, float]:
         return self._inherit_appearance_pair_with_group(first, second, bias_group_id=None)
 
@@ -665,6 +727,11 @@ class World:
     ) -> tuple[float, float, float]:
         appearance = self._config.appearance
         hue = self._circular_mean_deg(first.appearance_h, second.appearance_h)
+        hue = self._blend_hue_toward(
+            hue,
+            self._group_appearance_hue(bias_group_id) if bias_group_id is not None else None,
+            appearance.group_anchor_strength,
+        )
         saturation = (first.appearance_s + second.appearance_s) * 0.5
         lightness = (first.appearance_l + second.appearance_l) * 0.5
         if appearance.mutation_chance > 0.0 and self._appearance_rng.next_float() < appearance.mutation_chance:
@@ -717,7 +784,11 @@ class World:
 
     def _inherit_appearance(self, parent: Agent) -> tuple[float, float, float]:
         appearance = self._config.appearance
-        hue = parent.appearance_h
+        hue = self._blend_hue_toward(
+            parent.appearance_h,
+            self._group_appearance_hue(parent.group_id),
+            appearance.group_anchor_strength,
+        )
         saturation = parent.appearance_s
         lightness = parent.appearance_l
         if appearance.mutation_chance > 0.0 and self._appearance_rng.next_float() < appearance.mutation_chance:
