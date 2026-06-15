@@ -2662,3 +2662,60 @@ def test_steering_stride_reuses_last_desired():
     agent0_next = world.agents[0]
     assert agent0_next.last_desired.x == approx(last0[0])
     assert agent0_next.last_desired.y == approx(last0[1])
+
+
+def test_lifecycle_counts_known_food_cell_as_memory_hit():
+    config = make_static_config()
+    config.environment.food_consumption_rate = 1.0
+    config.memory.food_learn_rate = 1.0
+    world = World(config)
+    agent = Agent(
+        id=1,
+        generation=0,
+        group_id=2,
+        position=Vector2(0.5, 0.5),
+        velocity=Vector2(),
+        energy=1.0,
+        age=1.0,
+        state=AgentState.WANDER,
+    )
+    cell = (0, 0)
+    world._environment._food_cells[cell] = FoodCell(1.0, 2.0, 0.0)  # type: ignore[attr-defined]
+
+    lifecycle.apply_life_cycle(world, agent, 0, 0, False, sim_time=0.0, base_cell_key=cell)
+    assert world._group_memory.food_hits == 0  # type: ignore[attr-defined]
+    assert cell in world._group_memory.entries_for(agent.group_id)  # type: ignore[attr-defined]
+
+    world._environment._food_cells[cell] = FoodCell(1.0, 2.0, 0.0)  # type: ignore[attr-defined]
+    lifecycle.apply_life_cycle(world, agent, 0, 0, False, sim_time=1.0, base_cell_key=cell)
+
+    assert world._group_memory.food_hits == 1  # type: ignore[attr-defined]
+    assert world._group_memory.entries_for(agent.group_id)[cell].hits == 1  # type: ignore[attr-defined]
+
+
+def test_danger_reports_are_throttled_per_agent_cell():
+    config = make_static_config()
+    config.memory.danger_report_cooldown_ticks = 3
+    config.environment.danger_pulse_on_flee = 1.0
+    world = World(config)
+    agent = Agent(
+        id=1,
+        generation=0,
+        group_id=2,
+        position=Vector2(0.5, 0.5),
+        velocity=Vector2(),
+        energy=1.0,
+        age=1.0,
+        state=AgentState.FLEE,
+    )
+    cell = (0, 0)
+
+    world._apply_danger_pulse_if_needed(agent, cell, False, tick=10)  # type: ignore[attr-defined]
+    world._apply_danger_pulse_if_needed(agent, cell, False, tick=11)  # type: ignore[attr-defined]
+    assert world._group_memory.danger_reports == 1  # type: ignore[attr-defined]
+
+    world._apply_danger_pulse_if_needed(agent, cell, False, tick=13)  # type: ignore[attr-defined]
+    assert world._group_memory.danger_reports == 2  # type: ignore[attr-defined]
+
+    world._apply_danger_pulse_if_needed(agent, (1, 0), False, tick=14)  # type: ignore[attr-defined]
+    assert world._group_memory.danger_reports == 3  # type: ignore[attr-defined]

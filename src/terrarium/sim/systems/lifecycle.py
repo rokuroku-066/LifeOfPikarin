@@ -94,10 +94,19 @@ def apply_life_cycle(
     agent.energy += gained_energy
     if agent.group_id != world._UNGROUPED:
         tick = int(round(sim_time / max(world._config.time_step, 1e-12)))
+        known_food_cell = base_cell_key in world._group_memory.entries_for(agent.group_id)
         if gained_energy > world._config.memory.min_report_food:
             agent.last_food_cell = base_cell_key
             agent.last_food_tick = tick
-            world._group_memory.report_food(agent.group_id, base_cell_key, gained_energy, tick)
+            if known_food_cell:
+                world._group_memory.reinforce_food_visit(
+                    agent.group_id,
+                    base_cell_key,
+                    gained_energy,
+                    tick,
+                )
+            else:
+                world._group_memory.report_food(agent.group_id, base_cell_key, gained_energy, tick)
         else:
             world._group_memory.reinforce_food_visit(
                 agent.group_id,
